@@ -260,3 +260,47 @@ def check_sections_in_order(ctx):
 @then("the Issues section shows none")
 def check_issues_none(ctx):
     assert "Issues:\n  none" in ctx["stdout"], f"Issues section not empty:\n{ctx['stdout']}"
+
+
+# --- Then: packaging & CI (repository-level checks) ---------------------
+
+REPO_ROOT = FEATURES_DIR.parent
+
+
+def _pyproject() -> dict:
+    tomllib = pytest.importorskip("tomllib", reason="tomllib requires Python 3.11+")
+    return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+
+@then("the pyproject version matches the package version")
+def check_pyproject_version():
+    import file_organizer
+
+    assert _pyproject()["project"]["version"] == file_organizer.__version__
+
+
+@then(parsers.re(r'the pyproject declares the distribution name "(?P<name>[^"]+)"$'))
+def check_distribution_name(name):
+    assert _pyproject()["project"]["name"] == name
+
+
+@then(parsers.re(r'the pyproject declares the metadata field "(?P<field>[^"]+)"$'))
+def check_metadata_field(field):
+    assert field in _pyproject()["project"], f"pyproject [project] lacks {field!r}"
+
+
+@then(parsers.re(r'the pyproject declares the console script "(?P<script>[^"]+)"$'))
+def check_console_script(script):
+    assert script in _pyproject()["project"]["scripts"]
+
+
+@then(parsers.re(r'the repository file "(?P<rel>[^"]+)" exists$'))
+def check_repo_file_exists(rel):
+    assert (REPO_ROOT / rel).is_file(), f"repository file {rel!r} missing"
+
+
+@then(parsers.re(r'the repository file "(?P<rel>[^"]+)" contains "(?P<text>[^"]+)"$'))
+def check_repo_file_contains(rel, text):
+    path = REPO_ROOT / rel
+    assert path.is_file(), f"repository file {rel!r} missing"
+    assert text in path.read_text(encoding="utf-8"), f"{rel!r} does not contain {text!r}"

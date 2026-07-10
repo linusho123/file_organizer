@@ -434,3 +434,59 @@ instead of flattening. Three pre-existing subfolders of `.stori` files become
 NFR-5 is further amended: a keep-structure run may remove source folders it
 emptied (per FR-39); `--undo` recreates them. User files are still never
 deleted.
+
+---
+
+## 16. Iteration 5 — CI & PyPI packaging (v0.5.0)
+
+Automates the project's own quality gate and prepares the package for public
+distribution. Two deliverables: a GitHub Actions CI pipeline that runs the
+full test suite and linting on Linux **and** Windows for every push, and
+complete PyPI packaging with a release-triggered publish pipeline. No runtime
+behavior changes; the CLI is untouched except for the version bump.
+
+The distribution name on PyPI is **`organize-by-extension`** (the natural
+names `file-organizer` and `file-organizer-cli` are already taken). The
+import package (`file_organizer`) and the console command (`file-organizer`)
+are unchanged.
+
+### 16.1 Functional requirements
+
+- **FR-42** — A GitHub Actions workflow at `.github/workflows/ci.yml` runs on
+  every push and pull request to `master`. It installs the package with dev
+  extras, runs `ruff check` and `ruff format --check`, then runs the full
+  pytest suite (coverage gate included) — the same gate used locally.
+- **FR-43** — The CI matrix covers `ubuntu-latest` and `windows-latest`, each
+  on the oldest supported Python (3.10) and a current Python (3.13). This
+  closes the POSIX verification gap in AC-6: path handling is now proven on
+  a real Linux filesystem, not just Windows.
+- **FR-44** — `pyproject.toml` carries complete PyPI metadata: distribution
+  name `organize-by-extension`, readme, MIT license (with a `LICENSE` file in
+  the repository root), authors, keywords, classifiers, and project URLs
+  pointing at the GitHub repository. The `file-organizer` console script
+  remains declared.
+- **FR-45** — `python -m build` produces an sdist and a wheel that pass
+  `twine check`. `build` and `twine` are added to the dev extras.
+- **FR-46** — A workflow at `.github/workflows/publish.yml` builds and
+  uploads the package to PyPI whenever a GitHub release is published. It
+  authenticates via PyPI **trusted publishing** (OIDC, `id-token: write`);
+  no API token is stored in the repository.
+- **FR-47** — The version is consistent everywhere it appears:
+  `project.version` in `pyproject.toml` equals
+  `file_organizer.__version__`. Enforced by a test so a mismatched release
+  cannot go green.
+- **FR-48** — The README shows a CI status badge and documents installing
+  from PyPI (`pip install organize-by-extension`) alongside the existing
+  install-from-repository path.
+
+### 16.2 Acceptance criteria
+
+Locally executable (Gherkin, `features/packaging.feature`): metadata
+completeness, license file presence, version consistency, and the existence
+and required contents of both workflow files.
+
+Verified on GitHub (manual, once per iteration): the CI workflow runs green
+on all four matrix cells after push. The publish workflow is verified up to
+the upload step; the actual first upload requires the repository owner to
+configure the trusted publisher on pypi.org (one-time) and publish a GitHub
+release.
