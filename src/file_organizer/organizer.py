@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 NO_EXTENSION_FOLDER = "NO_EXTENSION_Files"
+MANIFEST_NAME = ".file_organizer_manifest.json"
 
 
 @dataclass
@@ -96,6 +97,9 @@ def build_plan(folder: Path) -> Plan:
     plan = Plan(folder=folder)
     taken: dict[str, set[str]] = {}
     for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
+        if entry.name == MANIFEST_NAME:
+            plan.skipped.append(SkippedItem(entry.name, "manifest"))
+            continue
         if entry.is_symlink():
             plan.skipped.append(SkippedItem(entry.name, "symlink"))
             continue

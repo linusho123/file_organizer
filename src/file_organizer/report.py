@@ -6,7 +6,12 @@ encoding cannot represent characters like arrows or em dashes.
 
 from __future__ import annotations
 
-from file_organizer.organizer import Plan, RunResult
+from typing import TYPE_CHECKING
+
+from file_organizer.organizer import MoveError, Plan, RunResult
+
+if TYPE_CHECKING:
+    from file_organizer.undo import UndoPlan, UndoResult
 
 
 def _count(n: int, noun: str) -> str:
@@ -52,6 +57,49 @@ def format_report(plan: Plan, result: RunResult | None, dry_run: bool) -> str:
     lines.append(
         f"Totals: {_count(len(moves), 'file')} moved,"
         f" {_count(len(plan.new_folders), 'folder')} created,"
+        f" {_count(len(conflicts), 'conflict')},"
+        f" {_count(len(errors), 'error')}"
+    )
+    return "\n".join(lines)
+
+
+def format_undo_report(plan: UndoPlan, result: UndoResult | None, dry_run: bool) -> str:
+    """Render the undo report; ``result`` is None for dry runs."""
+    if result is None:
+        restores = plan.restores
+        removed = list(plan.removable_folders)
+        errors = [
+            MoveError(f"{m.dest_folder}/{m.final_name}", "file not found") for m in plan.missing
+        ]
+    else:
+        restores = result.restored
+        removed = result.removed_folders
+        errors = result.errors
+
+    lines: list[str] = []
+    if dry_run:
+        lines.append("DRY RUN - no changes made")
+    lines.append(f"Undoing last run in: {plan.folder}")
+    lines.append("")
+
+    _section(lines, "Folders removed", removed)
+    _section(
+        lines,
+        "Files restored",
+        [f"{r.dest_folder}/{r.final_name}  ->  {r.restore_name}" for r in restores],
+    )
+
+    conflicts = [r for r in restores if r.renamed]
+    issues = [
+        f'conflict: "{r.source}" already existed at top level; restored as "{r.restore_name}"'
+        for r in conflicts
+    ]
+    issues.extend(f'error: could not restore "{e.source}": {e.message}' for e in errors)
+    _section(lines, "Issues", issues)
+
+    lines.append(
+        f"Totals: {_count(len(restores), 'file')} restored,"
+        f" {_count(len(removed), 'folder')} removed,"
         f" {_count(len(conflicts), 'conflict')},"
         f" {_count(len(errors), 'error')}"
     )
