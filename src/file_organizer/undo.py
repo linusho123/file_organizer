@@ -132,14 +132,25 @@ def build_undo_plan(folder: Path, manifest: Manifest) -> UndoPlan:
         folder_path = folder / name
         if not folder_path.is_dir():
             continue
-        leftovers = [
-            p.name
-            for p in folder_path.iterdir()
-            if (name.lower(), p.name.lower()) not in restored_away
-        ]
-        if not leftovers:
+        leftover = any(
+            not p.is_dir()
+            and (name.lower(), p.relative_to(folder_path).as_posix().lower()) not in restored_away
+            for p in folder_path.rglob("*")
+        )
+        if not leftover:
             plan.removable_folders.append(name)
     return plan
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    """Remove empty directory shells below ``root``; non-empty dirs are left alone."""
+    for child in root.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            _prune_empty_dirs(child)
+            try:
+                child.rmdir()
+            except OSError:
+                continue
 
 
 def execute_undo(plan: UndoPlan) -> UndoResult:
@@ -161,8 +172,10 @@ def execute_undo(plan: UndoPlan) -> UndoResult:
         else:
             result.restored.append(restore)
     for name in plan.removable_folders:
+        path = plan.folder / name
         try:
-            (plan.folder / name).rmdir()
+            _prune_empty_dirs(path)
+            path.rmdir()
         except OSError:
             continue
         result.removed_folders.append(name)

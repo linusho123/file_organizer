@@ -44,6 +44,9 @@ def format_report(plan: Plan, result: RunResult | None, dry_run: bool) -> str:
         "Files moved",
         [f"{m.source}  ->  {m.dest_folder}/{m.final_name}" for m in moves],
     )
+    if plan.keep_structure:
+        removed_dirs = plan.removable_source_dirs if result is None else result.removed_source_dirs
+        _section(lines, "Source folders removed", list(removed_dirs))
     _section(lines, "Skipped", [f"{s.name}  ({s.reason})" for s in plan.skipped])
 
     conflicts = [m for m in moves if m.renamed]

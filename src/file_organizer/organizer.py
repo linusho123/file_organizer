@@ -35,6 +35,8 @@ class Plan:
     moves: list[PlannedMove] = field(default_factory=list)
     new_folders: list[str] = field(default_factory=list)
     skipped: list[SkippedItem] = field(default_factory=list)
+    keep_structure: bool = False
+    removable_source_dirs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -48,6 +50,7 @@ class RunResult:
     plan: Plan
     moved: list[PlannedMove] = field(default_factory=list)
     errors: list[MoveError] = field(default_factory=list)
+    removed_source_dirs: list[str] = field(default_factory=list)
 
 
 def get_extension(name: str) -> str | None:
@@ -105,15 +108,19 @@ def resolve_name(name: str, taken: set[str]) -> tuple[str, bool]:
         counter += 1
 
 
-def build_plan(folder: Path, recursive: bool = False) -> Plan:
+def build_plan(folder: Path, recursive: bool = False, keep_structure: bool = False) -> Plan:
     """Scan ``folder`` and plan every move without executing anything.
 
     By default only direct children are considered; with ``recursive`` the
     scan descends into subfolders (except top-level type folders, which are
     destinations) and sources are recorded as forward-slash relative paths.
+    With ``keep_structure`` each file's destination mirrors its source
+    subpath inside the type folder, and source folders that the run would
+    empty are planned for removal.
     """
-    plan = Plan(folder=folder)
+    plan = Plan(folder=folder, keep_structure=keep_structure)
     files: list[str] = []
+    source_dirs: list[str] = []
 
     def scan(directory: Path, top: bool) -> None:
         for entry in sorted(directory.iterdir(), key=lambda p: p.name.lower()):
@@ -130,6 +137,7 @@ def build_plan(folder: Path, recursive: bool = False) -> Plan:
                 elif top and is_type_folder(entry.name):
                     plan.skipped.append(SkippedItem(rel, "type folder"))
                 else:
+                    source_dirs.append(rel)
                     scan(entry, top=False)
                 continue
             if not entry.is_file():
@@ -140,21 +148,50 @@ def build_plan(folder: Path, recursive: bool = False) -> Plan:
     scan(folder, top=True)
     files.sort(key=str.lower)
 
-    taken: dict[str, set[str]] = {}
+    seen_dest: set[str] = set()
+    taken: dict[tuple[str, str], set[str]] = {}
     for rel in files:
-        basename = rel.rsplit("/", 1)[-1]
+        parent, _, basename = rel.rpartition("/")
         dest_folder = folder_name_for(get_extension(basename))
-        if dest_folder not in taken:
-            dest_dir = folder / dest_folder
-            if dest_dir.is_dir():
-                taken[dest_folder] = {p.name.lower() for p in dest_dir.iterdir()}
-            else:
-                taken[dest_folder] = set()
+        if dest_folder not in seen_dest:
+            seen_dest.add(dest_folder)
+            if not (folder / dest_folder).is_dir():
                 plan.new_folders.append(dest_folder)
-        final_name, renamed = resolve_name(basename, taken[dest_folder])
-        taken[dest_folder].add(final_name.lower())
+        dest_parent = parent if keep_structure else ""
+        key = (dest_folder, dest_parent)
+        if key not in taken:
+            dest_dir = folder / dest_folder / dest_parent if dest_parent else folder / dest_folder
+            if dest_dir.is_dir():
+                taken[key] = {p.name.lower() for p in dest_dir.iterdir()}
+            else:
+                taken[key] = set()
+        final_base, renamed = resolve_name(basename, taken[key])
+        taken[key].add(final_base.lower())
+        final_name = f"{dest_parent}/{final_base}" if dest_parent else final_base
         plan.moves.append(PlannedMove(rel, dest_folder, final_name, renamed))
+
+    if keep_structure:
+        plan.removable_source_dirs = _plan_removals(folder, source_dirs, plan.moves)
     return plan
+
+
+def _plan_removals(folder: Path, source_dirs: list[str], moves: list[PlannedMove]) -> list[str]:
+    """Return source dirs the run empties: >=1 moved file under them, nothing left over."""
+    moved = {m.source for m in moves}
+    removable: set[str] = set()
+    for rel in sorted(source_dirs, key=lambda r: r.count("/"), reverse=True):
+        if not any(m.startswith(f"{rel}/") for m in moved):
+            continue
+        for child in (folder / rel).iterdir():
+            child_rel = child.relative_to(folder).as_posix()
+            if child.is_file() and not child.is_symlink() and child_rel in moved:
+                continue
+            if child.is_dir() and not child.is_symlink() and child_rel in removable:
+                continue
+            break
+        else:
+            removable.add(rel)
+    return sorted(removable, key=str.lower)
 
 
 def execute_plan(plan: Plan) -> RunResult:
@@ -162,12 +199,18 @@ def execute_plan(plan: Plan) -> RunResult:
     result = RunResult(plan=plan)
     for move in plan.moves:
         source = plan.folder / move.source
-        dest_dir = plan.folder / move.dest_folder
+        destination = plan.folder / move.dest_folder / move.final_name
         try:
-            dest_dir.mkdir(exist_ok=True)
-            shutil.move(str(source), str(dest_dir / move.final_name))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
         except OSError as exc:
             result.errors.append(MoveError(move.source, str(exc)))
         else:
             result.moved.append(move)
+    for rel in sorted(plan.removable_source_dirs, key=lambda r: r.count("/"), reverse=True):
+        try:
+            (plan.folder / rel).rmdir()
+        except OSError:
+            continue
+        result.removed_source_dirs.append(rel)
     return result

@@ -47,17 +47,19 @@ pip install -e .[dev]
 ## Usage
 
 ```text
-usage: file-organizer [-h] [--dry-run] [--recursive] [--undo] [--version] folder
+usage: file-organizer [-h] [--dry-run] [--recursive] [--keep-structure] [--undo] [--version] folder
 
 positional arguments:
-  folder       path to the folder whose top-level files will be organized
+  folder            path to the folder whose top-level files will be organized
 
 options:
-  -h, --help   show help and exit
-  --dry-run    preview all actions without changing the filesystem
-  --recursive  also organize files inside nested subfolders (type folders are never traversed)
-  --undo       reverse the most recent organizing run recorded in the folder's manifest
-  --version    print version and exit
+  -h, --help        show help and exit
+  --dry-run         preview all actions without changing the filesystem
+  --recursive       also organize files inside nested subfolders (type folders are never traversed)
+  --keep-structure  with --recursive: mirror each file's source subpath inside its type folder
+                    and remove source folders emptied by the run
+  --undo            reverse the most recent organizing run recorded in the folder's manifest
+  --version         print version and exit
 ```
 
 ### Examples
@@ -79,6 +81,15 @@ folders; emptied subfolders are left in place):
 
 ```powershell
 file-organizer C:\Users\me\Downloads\instrument_dump --recursive
+```
+
+Transport whole subfolders into the type folders, keeping their internal
+organization (three subfolders of `.stori` files become
+`STORI_Files/batch1/…`, `STORI_Files/batch2/…`, `STORI_Files/batch3/…`;
+emptied source folders are removed):
+
+```powershell
+file-organizer C:\Users\me\Downloads\instrument_dump --recursive --keep-structure
 ```
 
 Changed your mind? Reverse the last run:
@@ -145,6 +156,7 @@ Layout:
 | 0.1.0 | MVP | Organize top-level files into `<EXT>_Files` subfolders; collision auto-rename with suffixes; `--dry-run`; summary report with Issues section; exit codes 0/1/2. PRD §1–§12. |
 | 0.2.0 | Iteration 2 — Undo | Move manifest written on every organizing run; `--undo` restores files (with collision suffixes), removes now-empty created folders, and consumes the manifest; partial failures keep a retryable manifest; `--undo --dry-run` preview. PRD §13. |
 | 0.3.0 | Iteration 3 — Recursive | `--recursive` organizes files at any depth into top-level type folders; type folders are destinations, never traversed; nested manifests protected; deterministic relative-path ordering; undo restores nested files to their original folders, recreating deleted ones. PRD §14. |
+| 0.4.0 | Iteration 4 — Keep structure | `--keep-structure` (with `--recursive`) mirrors each file's source subpath inside its type folder instead of flattening; mixed folders split by type; collisions resolved per destination folder; emptied source folders removed (reported in a `Source folders removed` section); undo restores the exact original tree and prunes empty shells. PRD §15. |
 
 ### Planned (backlog, PRD §11)
 

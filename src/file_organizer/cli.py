@@ -41,6 +41,14 @@ def main(argv: list[str] | None = None) -> int:
         help="also organize files inside nested subfolders (type folders are never traversed)",
     )
     parser.add_argument(
+        "--keep-structure",
+        action="store_true",
+        help=(
+            "with --recursive: mirror each file's source subpath inside its type folder"
+            " and remove source folders emptied by the run"
+        ),
+    )
+    parser.add_argument(
         "--undo",
         action="store_true",
         help="reverse the most recent organizing run recorded in the folder's manifest",
@@ -51,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
         version=f"%(prog)s {__version__}",
     )
     args = parser.parse_args(argv)
+
+    if args.keep_structure and not args.recursive and not args.undo:
+        print("Error: --keep-structure requires --recursive", file=sys.stderr)
+        return 2
 
     target = Path(args.folder)
     if not target.exists():
@@ -64,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.undo:
         return _run_undo(folder, args)
 
-    plan = build_plan(folder, recursive=args.recursive)
+    plan = build_plan(folder, recursive=args.recursive, keep_structure=args.keep_structure)
     if args.dry_run:
         print(format_report(plan, None, dry_run=True))
         return 0
