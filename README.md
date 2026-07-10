@@ -27,20 +27,56 @@ executable Gherkin scenarios in [`features/`](features/).
 
 ## Installation
 
-From the repository root:
+### Global install — use from any directory, no venv (recommended)
+
+Install the CLI straight into your main Python. One command, run from
+anywhere (adjust the path to wherever this repository lives):
 
 ```powershell
-# create and use a virtual environment (recommended)
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1        # PowerShell; on macOS/Linux: source .venv/bin/activate
-
-# install the CLI
-pip install .
+python -m pip install C:\Users\linus\Documents\gitrepos\file_organizer
 ```
 
-For development (tests + linting), install editable with dev extras:
+That's it. pip puts a `file-organizer.exe` into your Python installation's
+`Scripts` folder, which is on your PATH — so from now on, in any terminal and
+from any directory, you can just type:
 
 ```powershell
+file-organizer "C:\any\folder\you\want" --dry-run
+```
+
+No virtual environment, no activation, no `cd`-ing to the project first.
+
+**Verify it worked:**
+
+```powershell
+file-organizer --version          # should print the current version
+(Get-Command file-organizer).Source   # shows where the exe lives
+```
+
+**Upgrading after the tool gets new features:** just re-run the same install
+command — pip rebuilds from the repository folder and replaces the installed
+copy in place. Already-open terminals pick up the new version on their next
+invocation; no restart needed.
+
+**Troubleshooting — `file-organizer` is not recognized:**
+
+1. Open a **new** terminal first. PATH changes (e.g. from installing Python
+   itself) only reach terminals opened afterwards.
+2. Still not found? Check that your Python `Scripts` folder is on PATH:
+   `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"`
+   prints the folder that must appear in
+   `[Environment]::GetEnvironmentVariable("Path", "User")`.
+3. As a last resort, the full path always works from anywhere:
+   `& "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts\file-organizer.exe" "C:\any\folder"`
+
+### Development setup (only for working on the tool itself)
+
+The `.venv` in this repository is **not needed to use the tool** — it exists
+so tests and linting run against pinned dev dependencies. To contribute:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1        # PowerShell; on macOS/Linux: source .venv/bin/activate
 pip install -e .[dev]
 ```
 
