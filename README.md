@@ -32,15 +32,28 @@ executable Gherkin scenarios in [`features/`](features/).
 Install the CLI straight into your main Python. One command, run from
 anywhere (adjust the path to wherever this repository lives):
 
-```powershell
-python -m pip install C:\Users\linus\Documents\gitrepos\file_organizer
+```bash
+# macOS / Linux
+python3 -m pip install ~/gitrepos/file_organizer
 ```
 
-That's it. pip puts a `file-organizer.exe` into your Python installation's
-`Scripts` folder, which is on your PATH — so from now on, in any terminal and
-from any directory, you can just type:
+```powershell
+# Windows (PowerShell)
+python -m pip install C:\Users\you\gitrepos\file_organizer
+```
+
+That's it. pip puts a `file-organizer` command into your Python installation's
+scripts folder (`bin` on macOS/Linux, `Scripts` on Windows), which is on your
+PATH — so from now on, in any terminal and from any directory, you can just
+type:
+
+```bash
+# macOS / Linux
+file-organizer ~/any/folder/you/want --dry-run
+```
 
 ```powershell
+# Windows (PowerShell)
 file-organizer "C:\any\folder\you\want" --dry-run
 ```
 
@@ -48,8 +61,15 @@ No virtual environment, no activation, no `cd`-ing to the project first.
 
 **Verify it worked:**
 
+```bash
+# macOS / Linux
+file-organizer --version    # should print the current version
+which file-organizer        # shows where the command lives
+```
+
 ```powershell
-file-organizer --version          # should print the current version
+# Windows (PowerShell)
+file-organizer --version              # should print the current version
 (Get-Command file-organizer).Source   # shows where the exe lives
 ```
 
@@ -58,25 +78,35 @@ command — pip rebuilds from the repository folder and replaces the installed
 copy in place. Already-open terminals pick up the new version on their next
 invocation; no restart needed.
 
-**Troubleshooting — `file-organizer` is not recognized:**
+**Troubleshooting — `file-organizer: command not found` / not recognized:**
 
 1. Open a **new** terminal first. PATH changes (e.g. from installing Python
    itself) only reach terminals opened afterwards.
-2. Still not found? Check that your Python `Scripts` folder is on PATH:
-   `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"`
-   prints the folder that must appear in
-   `[Environment]::GetEnvironmentVariable("Path", "User")`.
-3. As a last resort, the full path always works from anywhere:
-   `& "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts\file-organizer.exe" "C:\any\folder"`
+2. Still not found? Print your Python scripts folder and check it's on PATH:
+   `python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"`
+   (use `python` instead of `python3` on Windows). That folder must be on your
+   PATH — check with `echo $PATH` on macOS/Linux, or
+   `[Environment]::GetEnvironmentVariable("Path", "User")` on Windows.
+3. As a last resort, running it as a module always works from anywhere without
+   relying on PATH: `python3 -m file_organizer ~/any/folder` (or `python -m
+   file_organizer "C:\any\folder"` on Windows).
 
 ### Development setup (only for working on the tool itself)
 
 The `.venv` in this repository is **not needed to use the tool** — it exists
 so tests and linting run against pinned dev dependencies. To contribute:
 
+```bash
+# macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+```
+
 ```powershell
+# Windows (PowerShell)
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1        # PowerShell; on macOS/Linux: source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 pip install -e .[dev]
 ```
 
@@ -100,23 +130,26 @@ options:
 
 ### Examples
 
+These use macOS/Linux paths; on Windows swap in a `C:\...` path (e.g.
+`file-organizer "C:\Users\me\Downloads\instrument_dump" --dry-run`).
+
 Preview what would happen (no changes made):
 
-```powershell
-file-organizer C:\Users\me\Downloads\instrument_dump --dry-run
+```bash
+file-organizer ~/Downloads/instrument_dump --dry-run
 ```
 
 Organize the folder:
 
-```powershell
-file-organizer C:\Users\me\Downloads\instrument_dump
+```bash
+file-organizer ~/Downloads/instrument_dump
 ```
 
 Also pull files out of nested subfolders (they move into the top-level type
 folders; emptied subfolders are left in place):
 
-```powershell
-file-organizer C:\Users\me\Downloads\instrument_dump --recursive
+```bash
+file-organizer ~/Downloads/instrument_dump --recursive
 ```
 
 Transport whole subfolders into the type folders, keeping their internal
@@ -124,17 +157,17 @@ organization (three subfolders of `.stori` files become
 `STORI_Files/batch1/…`, `STORI_Files/batch2/…`, `STORI_Files/batch3/…`;
 emptied source folders are removed):
 
-```powershell
-file-organizer C:\Users\me\Downloads\instrument_dump --recursive --keep-structure
+```bash
+file-organizer ~/Downloads/instrument_dump --recursive --keep-structure
 ```
 
 Changed your mind? Reverse the last run:
 
-```powershell
-file-organizer C:\Users\me\Downloads\instrument_dump --undo
+```bash
+file-organizer ~/Downloads/instrument_dump --undo
 ```
 
-`python -m file_organizer <folder>` works too.
+`python3 -m file_organizer <folder>` works too (`python` on Windows).
 
 ### Behavior in brief
 
@@ -163,7 +196,7 @@ The project is built spec-first: PRD → Gherkin feature files + tests +
 linting → implementation phases. Tests must pass and lint must be clean
 before any phase is considered done.
 
-```powershell
+```bash
 # run everything: unit tests + all Gherkin scenarios, with >=90% coverage enforced
 python -m pytest
 
