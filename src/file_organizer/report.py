@@ -91,8 +91,7 @@ def format_undo_report(plan: UndoPlan, result: UndoResult | None, dry_run: bool)
 
     conflicts = [r for r in restores if r.renamed]
     issues = [
-        f'conflict: "{r.source}" already existed at top level; restored as "{r.restore_name}"'
-        for r in conflicts
+        f'conflict: "{r.source}" already existed; restored as "{r.restore_name}"' for r in conflicts
     ]
     issues.extend(f'error: could not restore "{e.source}": {e.message}' for e in errors)
     _section(lines, "Issues", issues)

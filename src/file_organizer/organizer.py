@@ -70,6 +70,19 @@ def folder_name_for(ext: str | None) -> str:
     return f"{ext.upper()}_Files"
 
 
+TYPE_FOLDER_SUFFIX = "_Files"
+
+
+def is_type_folder(name: str) -> bool:
+    """Return True if ``name`` looks like a folder this tool creates as a destination."""
+    if name == NO_EXTENSION_FOLDER:
+        return True
+    if not name.endswith(TYPE_FOLDER_SUFFIX):
+        return False
+    prefix = name[: -len(TYPE_FOLDER_SUFFIX)]
+    return bool(prefix) and prefix == prefix.upper()
+
+
 def resolve_name(name: str, taken: set[str]) -> tuple[str, bool]:
     """Return a destination filename that avoids ``taken`` (lowercased names).
 
@@ -92,24 +105,45 @@ def resolve_name(name: str, taken: set[str]) -> tuple[str, bool]:
         counter += 1
 
 
-def build_plan(folder: Path) -> Plan:
-    """Scan the top level of ``folder`` and plan every move without executing it."""
+def build_plan(folder: Path, recursive: bool = False) -> Plan:
+    """Scan ``folder`` and plan every move without executing anything.
+
+    By default only direct children are considered; with ``recursive`` the
+    scan descends into subfolders (except top-level type folders, which are
+    destinations) and sources are recorded as forward-slash relative paths.
+    """
     plan = Plan(folder=folder)
+    files: list[str] = []
+
+    def scan(directory: Path, top: bool) -> None:
+        for entry in sorted(directory.iterdir(), key=lambda p: p.name.lower()):
+            rel = entry.relative_to(folder).as_posix()
+            if entry.name == MANIFEST_NAME:
+                plan.skipped.append(SkippedItem(rel, "manifest"))
+                continue
+            if entry.is_symlink():
+                plan.skipped.append(SkippedItem(rel, "symlink"))
+                continue
+            if entry.is_dir():
+                if not recursive:
+                    plan.skipped.append(SkippedItem(rel, "directory"))
+                elif top and is_type_folder(entry.name):
+                    plan.skipped.append(SkippedItem(rel, "type folder"))
+                else:
+                    scan(entry, top=False)
+                continue
+            if not entry.is_file():
+                plan.skipped.append(SkippedItem(rel, "not a regular file"))
+                continue
+            files.append(rel)
+
+    scan(folder, top=True)
+    files.sort(key=str.lower)
+
     taken: dict[str, set[str]] = {}
-    for entry in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-        if entry.name == MANIFEST_NAME:
-            plan.skipped.append(SkippedItem(entry.name, "manifest"))
-            continue
-        if entry.is_symlink():
-            plan.skipped.append(SkippedItem(entry.name, "symlink"))
-            continue
-        if entry.is_dir():
-            plan.skipped.append(SkippedItem(entry.name, "directory"))
-            continue
-        if not entry.is_file():
-            plan.skipped.append(SkippedItem(entry.name, "not a regular file"))
-            continue
-        dest_folder = folder_name_for(get_extension(entry.name))
+    for rel in files:
+        basename = rel.rsplit("/", 1)[-1]
+        dest_folder = folder_name_for(get_extension(basename))
         if dest_folder not in taken:
             dest_dir = folder / dest_folder
             if dest_dir.is_dir():
@@ -117,9 +151,9 @@ def build_plan(folder: Path) -> Plan:
             else:
                 taken[dest_folder] = set()
                 plan.new_folders.append(dest_folder)
-        final_name, renamed = resolve_name(entry.name, taken[dest_folder])
+        final_name, renamed = resolve_name(basename, taken[dest_folder])
         taken[dest_folder].add(final_name.lower())
-        plan.moves.append(PlannedMove(entry.name, dest_folder, final_name, renamed))
+        plan.moves.append(PlannedMove(rel, dest_folder, final_name, renamed))
     return plan
 
 

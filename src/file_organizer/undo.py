@@ -108,14 +108,22 @@ def read_manifest(folder: Path) -> Manifest | None:
 def build_undo_plan(folder: Path, manifest: Manifest) -> UndoPlan:
     """Plan every restore and folder removal without executing anything."""
     plan = UndoPlan(folder=folder, manifest=manifest)
-    taken = {p.name.lower() for p in folder.iterdir()}
+    taken_by_dir: dict[str, set[str]] = {}
     for move in manifest.moves:
         current = folder / move.dest_folder / move.final_name
         if not current.is_file():
             plan.missing.append(move)
             continue
-        restore_name, renamed = resolve_name(move.source, taken)
-        taken.add(restore_name.lower())
+        parent, _, base = move.source.rpartition("/")
+        if parent not in taken_by_dir:
+            parent_dir = folder / parent if parent else folder
+            if parent_dir.is_dir():
+                taken_by_dir[parent] = {p.name.lower() for p in parent_dir.iterdir()}
+            else:
+                taken_by_dir[parent] = set()
+        restore_base, renamed = resolve_name(base, taken_by_dir[parent])
+        taken_by_dir[parent].add(restore_base.lower())
+        restore_name = f"{parent}/{restore_base}" if parent else restore_base
         plan.restores.append(
             PlannedRestore(move.source, move.dest_folder, move.final_name, restore_name, renamed)
         )
@@ -143,8 +151,10 @@ def execute_undo(plan: UndoPlan) -> UndoResult:
         failed.append(move)
     for restore in plan.restores:
         source = plan.folder / restore.dest_folder / restore.final_name
+        destination = plan.folder / restore.restore_name
         try:
-            shutil.move(str(source), str(plan.folder / restore.restore_name))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
         except OSError as exc:
             result.errors.append(MoveError(f"{restore.dest_folder}/{restore.final_name}", str(exc)))
             failed.append(RecordedMove(restore.source, restore.dest_folder, restore.final_name))

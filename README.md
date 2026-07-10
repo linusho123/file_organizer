@@ -47,7 +47,7 @@ pip install -e .[dev]
 ## Usage
 
 ```text
-usage: file-organizer [-h] [--dry-run] [--undo] [--version] folder
+usage: file-organizer [-h] [--dry-run] [--recursive] [--undo] [--version] folder
 
 positional arguments:
   folder       path to the folder whose top-level files will be organized
@@ -55,6 +55,7 @@ positional arguments:
 options:
   -h, --help   show help and exit
   --dry-run    preview all actions without changing the filesystem
+  --recursive  also organize files inside nested subfolders (type folders are never traversed)
   --undo       reverse the most recent organizing run recorded in the folder's manifest
   --version    print version and exit
 ```
@@ -73,6 +74,13 @@ Organize the folder:
 file-organizer C:\Users\me\Downloads\instrument_dump
 ```
 
+Also pull files out of nested subfolders (they move into the top-level type
+folders; emptied subfolders are left in place):
+
+```powershell
+file-organizer C:\Users\me\Downloads\instrument_dump --recursive
+```
+
 Changed your mind? Reverse the last run:
 
 ```powershell
@@ -83,8 +91,11 @@ file-organizer C:\Users\me\Downloads\instrument_dump --undo
 
 ### Behavior in brief
 
-- **Top level only.** Files inside existing subfolders are never touched;
-  subfolders are listed as skipped in the report.
+- **Top level only by default.** Files inside existing subfolders are never
+  touched unless you pass `--recursive`; subfolders are listed as skipped in
+  the report. With `--recursive`, files at any depth move into the top-level
+  type folders (which are themselves never traversed), and undo puts them
+  back in their original subfolders — recreating any that were deleted.
 - **Extension = text after the last dot**, case-insensitive: `sample.mzML` →
   `MZML_Files/`, `archive.tar.gz` → `GZ_Files/`. Files with no extension
   (including dotfiles like `.gitignore`) go to `NO_EXTENSION_Files/`.
@@ -133,10 +144,10 @@ Layout:
 |---|---|---|
 | 0.1.0 | MVP | Organize top-level files into `<EXT>_Files` subfolders; collision auto-rename with suffixes; `--dry-run`; summary report with Issues section; exit codes 0/1/2. PRD §1–§12. |
 | 0.2.0 | Iteration 2 — Undo | Move manifest written on every organizing run; `--undo` restores files (with collision suffixes), removes now-empty created folders, and consumes the manifest; partial failures keep a retryable manifest; `--undo --dry-run` preview. PRD §13. |
+| 0.3.0 | Iteration 3 — Recursive | `--recursive` organizes files at any depth into top-level type folders; type folders are destinations, never traversed; nested manifests protected; deterministic relative-path ordering; undo restores nested files to their original folders, recreating deleted ones. PRD §14. |
 
 ### Planned (backlog, PRD §11)
 
-- `--recursive` mode pulling files out of nested subfolders
 - Custom extension grouping (e.g. `.jpg` + `.png` → `Images_Files`)
 - `--report-file <path>` to save the summary report
 - `--only` / `--exclude` extension filters

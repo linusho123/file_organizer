@@ -36,6 +36,11 @@ def main(argv: list[str] | None = None) -> int:
         help="preview all actions without changing the filesystem",
     )
     parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="also organize files inside nested subfolders (type folders are never traversed)",
+    )
+    parser.add_argument(
         "--undo",
         action="store_true",
         help="reverse the most recent organizing run recorded in the folder's manifest",
@@ -59,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.undo:
         return _run_undo(folder, args)
 
-    plan = build_plan(folder)
+    plan = build_plan(folder, recursive=args.recursive)
     if args.dry_run:
         print(format_report(plan, None, dry_run=True))
         return 0
