@@ -7,9 +7,9 @@ import pytest
 from file_organizer import organizer, undo
 
 
-def organize(folder):
+def organize(folder, recursive=False):
     """Run a real organize pass and persist its manifest, like the CLI does."""
-    result = organizer.execute_plan(organizer.build_plan(folder))
+    result = organizer.execute_plan(organizer.build_plan(folder, recursive=recursive))
     undo.write_manifest(folder, result)
     return result
 
@@ -133,6 +133,44 @@ class TestExecuteUndo:
         remaining = undo.read_manifest(tmp_path)
         assert remaining is not None
         assert len(remaining.moves) == 1
+
+    def test_nested_round_trip(self, tmp_path):
+        sub = tmp_path / "data"
+        sub.mkdir()
+        (sub / "notes.txt").write_text("hello")
+        organize(tmp_path, recursive=True)
+        assert (tmp_path / "TXT_Files" / "notes.txt").is_file()
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        result = undo.execute_undo(plan)
+        assert result.errors == []
+        assert (sub / "notes.txt").read_text() == "hello"
+        assert not (tmp_path / "TXT_Files").exists()
+
+    def test_restore_recreates_deleted_source_folder(self, tmp_path):
+        sub = tmp_path / "data"
+        sub.mkdir()
+        (sub / "notes.txt").write_text("hello")
+        organize(tmp_path, recursive=True)
+        sub.rmdir()
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        result = undo.execute_undo(plan)
+        assert result.errors == []
+        assert (sub / "notes.txt").read_text() == "hello"
+
+    def test_restore_collision_resolved_inside_original_folder(self, tmp_path):
+        sub = tmp_path / "data"
+        sub.mkdir()
+        (sub / "notes.txt").write_text("original")
+        organize(tmp_path, recursive=True)
+        (sub / "notes.txt").write_text("newcomer")
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        restore = plan.restores[0]
+        assert restore.restore_name == "data/notes_1.txt"
+        assert restore.renamed is True
+        result = undo.execute_undo(plan)
+        assert result.errors == []
+        assert (sub / "notes.txt").read_text() == "newcomer"
+        assert (sub / "notes_1.txt").read_text() == "original"
 
     def test_non_empty_created_folder_survives(self, tmp_path):
         (tmp_path / "a.txt").write_text("x")

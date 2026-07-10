@@ -109,6 +109,41 @@ def run_organizer_dry(ctx, capsys):
     _run(ctx, capsys, ["--dry-run"])
 
 
+@given(parsers.re(r'the workspace contains a nested file named "(?P<rel>[^"]+)"$'))
+def workspace_nested_file(ctx, rel):
+    path = ctx["workspace"] / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"content-of-{rel}")
+
+
+@given(
+    parsers.re(
+        r'the workspace contains a nested file named "(?P<rel>[^"]+)"'
+        r' with content "(?P<content>[^"]*)"$'
+    )
+)
+def workspace_nested_file_with_content(ctx, rel, content):
+    path = ctx["workspace"] / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
+@when("I run the organizer on the target with --recursive")
+def run_organizer_recursive(ctx, capsys):
+    _run(ctx, capsys, ["--recursive"])
+
+
+@when("I run the organizer on the target with --recursive and --dry-run")
+def run_organizer_recursive_dry(ctx, capsys):
+    ctx["snapshot"] = _snapshot(ctx["workspace"])
+    _run(ctx, capsys, ["--recursive", "--dry-run"])
+
+
+@when(parsers.re(r'the folder "(?P<rel>[^"]+)" is deleted from the workspace$'))
+def workspace_folder_deleted(ctx, rel):
+    (ctx["workspace"] / rel).rmdir()
+
+
 @when("I run the organizer on the target with --undo")
 def run_organizer_undo(ctx, capsys):
     _run(ctx, capsys, ["--undo"])

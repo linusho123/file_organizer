@@ -39,6 +39,23 @@ def test_folder_name_for(ext, expected):
     assert organizer.folder_name_for(ext) == expected
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("TXT_Files", True),
+        ("STORX_Files", True),
+        ("TAR-GZ_Files", True),
+        ("NO_EXTENSION_Files", True),
+        ("My_Files", False),
+        ("_Files", False),
+        ("TXT_files", False),
+        ("data", False),
+    ],
+)
+def test_is_type_folder(name, expected):
+    assert organizer.is_type_folder(name) is expected
+
+
 class TestResolveName:
     def test_no_conflict_keeps_name(self):
         assert organizer.resolve_name("report.txt", set()) == ("report.txt", False)
@@ -108,6 +125,77 @@ class TestBuildPlan:
         assert plan.moves == []
         assert plan.new_folders == []
         assert plan.skipped == []
+
+
+class TestBuildPlanRecursive:
+    def test_collects_nested_files_with_relative_paths(self, tmp_path):
+        (tmp_path / "top.md").write_text("x")
+        nested = tmp_path / "data"
+        nested.mkdir()
+        (nested / "notes.txt").write_text("x")
+        deep = tmp_path / "a" / "b"
+        deep.mkdir(parents=True)
+        (deep / "deep.storx").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert [m.source for m in plan.moves] == ["a/b/deep.storx", "data/notes.txt", "top.md"]
+        assert [m.dest_folder for m in plan.moves] == ["STORX_Files", "TXT_Files", "MD_Files"]
+        assert plan.skipped == []
+
+    def test_type_folders_are_not_traversed(self, tmp_path):
+        dest = tmp_path / "TXT_Files"
+        dest.mkdir()
+        (dest / "report.txt").write_text("x")
+        (tmp_path / "new.txt").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert [m.source for m in plan.moves] == ["new.txt"]
+        assert [(s.name, s.reason) for s in plan.skipped] == [("TXT_Files", "type folder")]
+
+    def test_nested_dir_with_type_folder_name_is_traversed(self, tmp_path):
+        nested = tmp_path / "sub" / "TXT_Files"
+        nested.mkdir(parents=True)
+        (nested / "old.txt").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert [m.source for m in plan.moves] == ["sub/TXT_Files/old.txt"]
+
+    def test_nested_manifest_is_skipped(self, tmp_path):
+        inner = tmp_path / "inner"
+        inner.mkdir()
+        (inner / organizer.MANIFEST_NAME).write_text("{}")
+        (inner / "notes.txt").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert [m.source for m in plan.moves] == ["inner/notes.txt"]
+        assert [(s.name, s.reason) for s in plan.skipped] == [
+            (f"inner/{organizer.MANIFEST_NAME}", "manifest")
+        ]
+
+    def test_cross_folder_collision_first_by_path_keeps_name(self, tmp_path):
+        (tmp_path / "report.txt").write_text("top")
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "report.txt").write_text("nested")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert [(m.source, m.final_name, m.renamed) for m in plan.moves] == [
+            ("report.txt", "report.txt", False),
+            ("sub/report.txt", "report_1.txt", True),
+        ]
+
+    def test_default_is_not_recursive(self, tmp_path):
+        sub = tmp_path / "data"
+        sub.mkdir()
+        (sub / "notes.txt").write_text("x")
+        plan = organizer.build_plan(tmp_path)
+        assert plan.moves == []
+        assert [(s.name, s.reason) for s in plan.skipped] == [("data", "directory")]
+
+    def test_execute_moves_nested_file_and_leaves_empty_folder(self, tmp_path):
+        sub = tmp_path / "data"
+        sub.mkdir()
+        (sub / "notes.txt").write_text("hello")
+        result = organizer.execute_plan(organizer.build_plan(tmp_path, recursive=True))
+        assert result.errors == []
+        assert (tmp_path / "TXT_Files" / "notes.txt").read_text() == "hello"
+        assert sub.is_dir()
+        assert list(sub.iterdir()) == []
 
 
 class TestExecutePlan:

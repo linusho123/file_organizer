@@ -109,7 +109,7 @@ def test_undo_report_dry_run_with_conflict_and_missing():
     )
     text = format_undo_report(plan, None, dry_run=True)
     assert text.splitlines()[0] == "DRY RUN - no changes made"
-    assert 'conflict: "a.txt" already existed at top level; restored as "a_1.txt"' in text
+    assert 'conflict: "a.txt" already existed; restored as "a_1.txt"' in text
     assert 'error: could not restore "STORX_Files/b.storx": file not found' in text
     assert "Totals: 1 file restored, 0 folders removed, 1 conflict, 1 error" in text
 

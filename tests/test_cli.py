@@ -59,6 +59,32 @@ def test_move_failure_exits_1_but_completes(tmp_path, capsys, monkeypatch):
     assert "1 error" in out
 
 
+def test_recursive_flag_organizes_nested_files(tmp_path, capsys):
+    sub = tmp_path / "data"
+    sub.mkdir()
+    (sub / "notes.txt").write_text("x")
+    code = cli.main([str(tmp_path), "--recursive"])
+    assert code == 0
+    assert (tmp_path / "TXT_Files" / "notes.txt").is_file()
+    assert "data/notes.txt  ->  TXT_Files/notes.txt" in capsys.readouterr().out
+
+
+def test_recursive_dry_run_changes_nothing(tmp_path, capsys):
+    sub = tmp_path / "data"
+    sub.mkdir()
+    (sub / "notes.txt").write_text("x")
+    code = cli.main([str(tmp_path), "--recursive", "--dry-run"])
+    assert code == 0
+    assert (sub / "notes.txt").is_file()
+    assert not (tmp_path / "TXT_Files").exists()
+
+
+def test_help_mentions_recursive(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "--recursive" in capsys.readouterr().out
+
+
 def test_undo_without_manifest_exits_2(tmp_path, capsys):
     code = cli.main([str(tmp_path), "--undo"])
     assert code == 2

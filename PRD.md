@@ -279,7 +279,8 @@ one POSIX platform (CI):
 
 ## 11. Future Iterations (post-MVP backlog, not in scope)
 
-- Recursive mode (`--recursive`) pulling files out of nested subfolders.
+- ~~Recursive mode (`--recursive`) pulling files out of nested subfolders.~~
+  **Implemented in Iteration 3 — see §14.**
 - Custom mapping config (e.g., group `.jpg`/`.png` → `Images_Files`; rename schemes).
 - ~~Undo: write a manifest of moves each run; `--undo` replays it in reverse.~~
   **Implemented in Iteration 2 — see §13.**
@@ -347,3 +348,40 @@ Same structure and ordering as the organize report, with headers
 NFR-5 is amended for undo: the tool still never deletes user files; undo may
 delete only its own manifest file and remove type folders it created that are
 now empty.
+
+---
+
+## 14. Iteration 3 — Recursive mode (v0.3.0)
+
+With `--recursive`, files at every depth below the input folder are pulled out
+of their subfolders and organized into the **top-level** type folders.
+
+### 14.1 Functional requirements
+
+- **FR-28** — `--recursive` extends the scan to files at any depth below the
+  input folder; every file moves into the top-level type folder for its
+  extension. Without the flag, behavior is unchanged (top level only).
+- **FR-29** — In recursive mode, top-level directories named like type folders
+  are destinations, not sources: they are never traversed and appear in
+  Skipped with reason `(type folder)`. A name counts as a type folder when it
+  is `NO_EXTENSION_Files` or ends in `_Files` with an all-uppercase prefix
+  (`TXT_Files`, `TAR-GZ_Files`). Nested directories with such names are
+  traversed normally.
+- **FR-30** — Symlinks at any depth are skipped and never traversed. Files
+  named `.file_organizer_manifest.json` at any depth are skipped with reason
+  `(manifest)` so a previously organized subfolder keeps its own undo intact.
+- **FR-31** — Files are processed in case-insensitive alphabetical order of
+  their relative path, and moves are reported with forward-slash relative
+  paths (`sub/notes.txt  ->  TXT_Files/notes.txt`). Collisions between files
+  from different source folders get the usual `_N` suffix, first-processed
+  file keeps its name.
+- **FR-32** — Subfolders emptied by a recursive run are left in place; the
+  tool still never deletes user folders.
+- **FR-33** — The manifest records relative source paths. `--undo` restores
+  nested files to their original folders, recreating intermediate folders
+  that have since been deleted, and resolves restore collisions inside the
+  original folder. The conflict wording becomes
+  `conflict: "<source>" already existed; restored as "<restore path>"`.
+- **FR-34** — `--recursive` composes with `--dry-run` (recursive preview, zero
+  changes). With `--undo`, `--recursive` is accepted and ignored: the manifest
+  fully defines what is restored.
