@@ -109,6 +109,30 @@ def run_organizer_dry(ctx, capsys):
     _run(ctx, capsys, ["--dry-run"])
 
 
+@when("I run the organizer on the target with --undo")
+def run_organizer_undo(ctx, capsys):
+    _run(ctx, capsys, ["--undo"])
+
+
+@when("I run the organizer on the target with --undo and --dry-run")
+def run_organizer_undo_dry(ctx, capsys):
+    _run(ctx, capsys, ["--undo", "--dry-run"])
+
+
+@when(
+    parsers.re(
+        r'the workspace gains a file named "(?P<name>[^"]+)" with content "(?P<content>[^"]*)"$'
+    )
+)
+def workspace_gains_file(ctx, name, content):
+    (ctx["workspace"] / name).write_text(content)
+
+
+@when(parsers.re(r'the file "(?P<rel>[^"]+)" is deleted from the workspace$'))
+def workspace_file_deleted(ctx, rel):
+    (ctx["workspace"] / rel).unlink()
+
+
 # --- Then --------------------------------------------------------------
 
 

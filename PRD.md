@@ -281,7 +281,8 @@ one POSIX platform (CI):
 
 - Recursive mode (`--recursive`) pulling files out of nested subfolders.
 - Custom mapping config (e.g., group `.jpg`/`.png` → `Images_Files`; rename schemes).
-- Undo: write a manifest of moves each run; `--undo` replays it in reverse.
+- ~~Undo: write a manifest of moves each run; `--undo` replays it in reverse.~~
+  **Implemented in Iteration 2 — see §13.**
 - `--report-file <path>` to save the summary report to disk.
 - Filters: `--only ext1,ext2` / `--exclude ext1,ext2`.
 - Watch mode / scheduled organizing.
@@ -293,3 +294,56 @@ one POSIX platform (CI):
   only, `--report-file` deferred to backlog)?
 - Should hidden/system files (beyond dotfiles) on Windows be skipped or organized?
   MVP treats them like any other file.
+
+---
+
+## 13. Iteration 2 — Undo (v0.2.0)
+
+Reverses the most recent organizing run using a manifest written by every run
+that moves at least one file.
+
+### 13.1 Manifest
+
+- **FR-19** — Every real (non-dry) run that moves at least one file writes
+  `.file_organizer_manifest.json` into the input folder, overwriting any
+  previous manifest. It records a format version, an ISO-8601 timestamp, every
+  executed move (original name, type folder, final name), and the type folders
+  created by that run. Runs that move zero files leave an existing manifest
+  untouched; dry runs never write one.
+- **FR-20** — The manifest file itself is never organized: it is skipped and
+  listed in the report's Skipped section with reason `(manifest)`.
+
+### 13.2 Undo behavior
+
+- **FR-21** — `--undo` reads the manifest and reverses the recorded run: each
+  recorded file is moved from `<TypeFolder>/<final name>` back to its original
+  top-level name, in recorded order.
+- **FR-22** — If the original name is already taken at the top level, the file
+  is restored with the lowest free `_N` suffix and the rename is reported as a
+  conflict in the Issues section; the exit code stays 0.
+- **FR-23** — Recorded files that no longer exist at their recorded location
+  are reported as errors in Issues; all other files are still restored, and
+  the run exits 1.
+- **FR-24** — After restoring, type folders that the recorded run created are
+  removed only if empty. Folders holding any other content are left in place.
+- **FR-25** — On full success the manifest is deleted. If any restore failed,
+  the manifest is rewritten to contain only the entries that were not restored
+  so the undo can be retried; folders already removed are dropped from it.
+- **FR-26** — `--undo --dry-run` previews the full undo report (including
+  would-be conflicts and missing-file errors) with zero filesystem changes.
+- **FR-27** — `--undo` with no manifest exits 2 with
+  `Error: no manifest found in: <path>`. An unreadable or corrupt manifest
+  exits 2 with `Error: could not read manifest: <details>`.
+
+### 13.3 Undo report
+
+Same structure and ordering as the organize report, with headers
+`Folders removed` and `Files restored`, each restore rendered as
+`<TypeFolder>/<final name>  ->  <restored name>`, and the totals line
+`Totals: N files restored, M folders removed, K conflicts, E errors`.
+
+### 13.4 NFR amendment
+
+NFR-5 is amended for undo: the tool still never deletes user files; undo may
+delete only its own manifest file and remove type folders it created that are
+now empty.

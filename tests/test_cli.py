@@ -59,6 +59,50 @@ def test_move_failure_exits_1_but_completes(tmp_path, capsys, monkeypatch):
     assert "1 error" in out
 
 
+def test_undo_without_manifest_exits_2(tmp_path, capsys):
+    code = cli.main([str(tmp_path), "--undo"])
+    assert code == 2
+    assert "Error: no manifest found in:" in capsys.readouterr().err
+
+
+def test_undo_with_corrupt_manifest_exits_2(tmp_path, capsys):
+    from file_organizer import undo
+
+    (tmp_path / undo.MANIFEST_NAME).write_text("{not json")
+    code = cli.main([str(tmp_path), "--undo"])
+    assert code == 2
+    assert "Error: could not read manifest:" in capsys.readouterr().err
+
+
+def test_organize_then_undo_round_trip(tmp_path, capsys):
+    (tmp_path / "a.txt").write_text("hello")
+    assert cli.main([str(tmp_path)]) == 0
+    assert (tmp_path / "TXT_Files" / "a.txt").is_file()
+    code = cli.main([str(tmp_path), "--undo"])
+    assert code == 0
+    assert (tmp_path / "a.txt").read_text() == "hello"
+    assert not (tmp_path / "TXT_Files").exists()
+    assert "Totals: 1 file restored, 1 folder removed" in capsys.readouterr().out
+
+
+def test_undo_dry_run_changes_nothing(tmp_path, capsys):
+    (tmp_path / "a.txt").write_text("x")
+    assert cli.main([str(tmp_path)]) == 0
+    code = cli.main([str(tmp_path), "--undo", "--dry-run"])
+    assert code == 0
+    assert (tmp_path / "TXT_Files" / "a.txt").is_file()
+    assert "DRY RUN - no changes made" in capsys.readouterr().out
+
+
+def test_undo_with_missing_file_exits_1(tmp_path, capsys):
+    (tmp_path / "a.txt").write_text("x")
+    assert cli.main([str(tmp_path)]) == 0
+    (tmp_path / "TXT_Files" / "a.txt").unlink()
+    code = cli.main([str(tmp_path), "--undo"])
+    assert code == 1
+    assert "error: could not restore" in capsys.readouterr().out
+
+
 def test_version_flag_exits_0(capsys):
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["--version"])
