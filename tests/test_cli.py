@@ -85,6 +85,32 @@ def test_help_mentions_recursive(capsys):
     assert "--recursive" in capsys.readouterr().out
 
 
+def test_keep_structure_requires_recursive(tmp_path, capsys):
+    (tmp_path / "a.txt").write_text("x")
+    code = cli.main([str(tmp_path), "--keep-structure"])
+    assert code == 2
+    assert "--keep-structure requires --recursive" in capsys.readouterr().err
+    assert (tmp_path / "a.txt").is_file()
+
+
+def test_keep_structure_end_to_end(tmp_path, capsys):
+    batch1 = tmp_path / "batch1"
+    batch1.mkdir()
+    (batch1 / "a.stori").write_text("x")
+    code = cli.main([str(tmp_path), "--recursive", "--keep-structure"])
+    assert code == 0
+    assert (tmp_path / "STORI_Files" / "batch1" / "a.stori").is_file()
+    assert not batch1.exists()
+    out = capsys.readouterr().out
+    assert "Source folders removed:" in out
+
+
+def test_help_mentions_keep_structure(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "--keep-structure" in capsys.readouterr().out
+
+
 def test_undo_without_manifest_exits_2(tmp_path, capsys):
     code = cli.main([str(tmp_path), "--undo"])
     assert code == 2

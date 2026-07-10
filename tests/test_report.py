@@ -6,12 +6,14 @@ from file_organizer.organizer import MoveError, Plan, PlannedMove, RunResult, Sk
 from file_organizer.report import format_report
 
 
-def make_plan(moves=(), new_folders=(), skipped=()):
+def make_plan(moves=(), new_folders=(), skipped=(), keep_structure=False, removable=()):
     return Plan(
         folder=Path("C:/data/workspace"),
         moves=list(moves),
         new_folders=list(new_folders),
         skipped=list(skipped),
+        keep_structure=keep_structure,
+        removable_source_dirs=list(removable),
     )
 
 
@@ -70,6 +72,28 @@ def test_empty_run_shows_none_sections_and_zero_totals():
     assert "Skipped:\n  none" in text
     assert "Issues:\n  none" in text
     assert "Totals: 0 files moved, 0 folders created, 0 conflicts, 0 errors" in text
+
+
+def test_keep_structure_report_has_source_folders_removed_section():
+    plan = make_plan(
+        moves=[PlannedMove("batch1/a.stori", "STORI_Files", "batch1/a.stori", renamed=False)],
+        new_folders=["STORI_Files"],
+        keep_structure=True,
+        removable=["batch1"],
+    )
+    dry_text = format_report(plan, None, dry_run=True)
+    assert "batch1/a.stori  ->  STORI_Files/batch1/a.stori" in dry_text
+    assert "Source folders removed:\n  batch1" in dry_text
+    result = RunResult(plan=plan, moved=list(plan.moves), errors=[], removed_source_dirs=["batch1"])
+    real_text = format_report(plan, result, dry_run=False)
+    assert "Source folders removed:\n  batch1" in real_text
+    assert "Totals: 1 file moved, 1 folder created, 0 conflicts, 0 errors" in real_text
+
+
+def test_flat_report_has_no_source_folders_section():
+    plan = make_plan(moves=[PlannedMove("a.txt", "TXT_Files", "a.txt", renamed=False)])
+    result = RunResult(plan=plan, moved=list(plan.moves), errors=[])
+    assert "Source folders removed" not in format_report(plan, result, dry_run=False)
 
 
 def test_undo_report_full():

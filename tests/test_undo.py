@@ -7,9 +7,10 @@ import pytest
 from file_organizer import organizer, undo
 
 
-def organize(folder, recursive=False):
+def organize(folder, recursive=False, keep_structure=False):
     """Run a real organize pass and persist its manifest, like the CLI does."""
-    result = organizer.execute_plan(organizer.build_plan(folder, recursive=recursive))
+    plan = organizer.build_plan(folder, recursive=recursive, keep_structure=keep_structure)
+    result = organizer.execute_plan(plan)
     undo.write_manifest(folder, result)
     return result
 
@@ -171,6 +172,44 @@ class TestExecuteUndo:
         assert result.errors == []
         assert (sub / "notes.txt").read_text() == "newcomer"
         assert (sub / "notes_1.txt").read_text() == "original"
+
+    def test_keep_structure_round_trip(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("hello")
+        batch2 = tmp_path / "batch2"
+        batch2.mkdir()
+        (batch2 / "c.stori").write_text("x")
+        organize(tmp_path, recursive=True, keep_structure=True)
+        assert not batch1.exists()
+        assert (tmp_path / "STORI_Files" / "batch1" / "a.stori").is_file()
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        result = undo.execute_undo(plan)
+        assert result.errors == []
+        assert (tmp_path / "batch1" / "a.stori").read_text() == "hello"
+        assert (tmp_path / "batch2" / "c.stori").is_file()
+        assert not (tmp_path / "STORI_Files").exists()
+        assert not (tmp_path / undo.MANIFEST_NAME).exists()
+
+    def test_created_type_folder_with_shells_is_removable(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        organize(tmp_path, recursive=True, keep_structure=True)
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        assert plan.removable_folders == ["STORI_Files"]
+
+    def test_preexisting_type_folder_is_kept_after_structured_undo(self, tmp_path):
+        (tmp_path / "STORI_Files").mkdir()
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        organize(tmp_path, recursive=True, keep_structure=True)
+        plan = undo.build_undo_plan(tmp_path, undo.read_manifest(tmp_path))
+        result = undo.execute_undo(plan)
+        assert result.errors == []
+        assert (tmp_path / "batch1" / "a.stori").is_file()
+        assert (tmp_path / "STORI_Files").is_dir()
 
     def test_non_empty_created_folder_survives(self, tmp_path):
         (tmp_path / "a.txt").write_text("x")

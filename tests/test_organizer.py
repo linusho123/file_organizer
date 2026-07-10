@@ -198,6 +198,109 @@ class TestBuildPlanRecursive:
         assert list(sub.iterdir()) == []
 
 
+class TestBuildPlanKeepStructure:
+    def test_mirrors_source_subpath_in_type_folder(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        (batch1 / "b.stori").write_text("x")
+        batch2 = tmp_path / "batch2"
+        batch2.mkdir()
+        (batch2 / "c.stori").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        assert [(m.source, m.dest_folder, m.final_name) for m in plan.moves] == [
+            ("batch1/a.stori", "STORI_Files", "batch1/a.stori"),
+            ("batch1/b.stori", "STORI_Files", "batch1/b.stori"),
+            ("batch2/c.stori", "STORI_Files", "batch2/c.stori"),
+        ]
+        assert plan.new_folders == ["STORI_Files"]
+        assert plan.removable_source_dirs == ["batch1", "batch2"]
+
+    def test_top_level_files_land_directly(self, tmp_path):
+        (tmp_path / "top.md").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        assert [(m.source, m.final_name) for m in plan.moves] == [("top.md", "top.md")]
+
+    def test_collision_resolved_inside_destination_dir(self, tmp_path):
+        dest = tmp_path / "STORI_Files" / "batch1"
+        dest.mkdir(parents=True)
+        (dest / "a.stori").write_text("old")
+        src = tmp_path / "batch1"
+        src.mkdir()
+        (src / "a.stori").write_text("new")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        move = plan.moves[0]
+        assert move.final_name == "batch1/a_1.stori"
+        assert move.renamed is True
+        assert plan.new_folders == []
+
+    def test_mixed_folder_splits_by_type(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        (batch1 / "notes.txt").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        assert [(m.dest_folder, m.final_name) for m in plan.moves] == [
+            ("STORI_Files", "batch1/a.stori"),
+            ("TXT_Files", "batch1/notes.txt"),
+        ]
+        assert plan.removable_source_dirs == ["batch1"]
+
+    def test_preexisting_empty_subfolder_blocks_removal(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        (batch1 / "empty_sub").mkdir()
+        (tmp_path / "keepdir").mkdir()
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        assert plan.removable_source_dirs == []
+
+    def test_skipped_item_blocks_removal(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        (batch1 / organizer.MANIFEST_NAME).write_text("{}")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        assert plan.removable_source_dirs == []
+
+    def test_flat_recursive_plans_no_removals(self, tmp_path):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True)
+        assert plan.keep_structure is False
+        assert plan.removable_source_dirs == []
+        assert plan.moves[0].final_name == "a.stori"
+
+
+class TestExecuteKeepStructure:
+    def test_moves_files_and_removes_emptied_sources(self, tmp_path):
+        deep = tmp_path / "a" / "b"
+        deep.mkdir(parents=True)
+        (deep / "c.stori").write_text("deep")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+        result = organizer.execute_plan(plan)
+        assert result.errors == []
+        assert (tmp_path / "STORI_Files" / "a" / "b" / "c.stori").read_text() == "deep"
+        assert not (tmp_path / "a").exists()
+        assert result.removed_source_dirs == ["a/b", "a"]
+
+    def test_failed_move_keeps_source_folder(self, tmp_path, monkeypatch):
+        batch1 = tmp_path / "batch1"
+        batch1.mkdir()
+        (batch1 / "a.stori").write_text("x")
+        plan = organizer.build_plan(tmp_path, recursive=True, keep_structure=True)
+
+        def failing_move(src, dst):
+            raise OSError("locked")
+
+        monkeypatch.setattr(organizer.shutil, "move", failing_move)
+        result = organizer.execute_plan(plan)
+        assert len(result.errors) == 1
+        assert batch1.is_dir()
+        assert result.removed_source_dirs == []
+
+
 class TestExecutePlan:
     def test_moves_files_and_creates_folders(self, tmp_path):
         (tmp_path / "a.txt").write_text("a")

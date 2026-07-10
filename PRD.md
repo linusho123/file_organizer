@@ -385,3 +385,52 @@ of their subfolders and organized into the **top-level** type folders.
 - **FR-34** — `--recursive` composes with `--dry-run` (recursive preview, zero
   changes). With `--undo`, `--recursive` is accepted and ignored: the manifest
   fully defines what is restored.
+
+---
+
+## 15. Iteration 4 — Keep structure (v0.4.0)
+
+`--keep-structure` (used with `--recursive`) transports subfolder contents
+into the type folders while preserving the source folder organization,
+instead of flattening. Three pre-existing subfolders of `.stori` files become
+`STORI_Files/batch1/…`, `STORI_Files/batch2/…`, `STORI_Files/batch3/…`.
+
+### 15.1 Functional requirements
+
+- **FR-35** — With `--recursive --keep-structure`, each file's destination
+  inside its type folder mirrors the file's source subpath:
+  `batch1/a.stori` → `STORI_Files/batch1/a.stori`,
+  `a/b/c.stori` → `STORI_Files/a/b/c.stori`. Top-level files land directly in
+  the type folder exactly as before. Intermediate destination folders are
+  created as needed.
+- **FR-36** — `--keep-structure` without `--recursive` exits 2 with
+  `Error: --keep-structure requires --recursive`.
+- **FR-37** — Subfolders holding more than one file type are split by type,
+  with the subpath mirrored in every affected type folder:
+  `batch1/a.stori` → `STORI_Files/batch1/a.stori` and
+  `batch1/notes.txt` → `TXT_Files/batch1/notes.txt`.
+- **FR-38** — Collisions are resolved inside the destination directory
+  (`STORI_Files/batch1/`) with the usual lowest-free `_N` suffix and are
+  reported as conflicts in Issues.
+- **FR-39** — Source folders emptied by the run are removed, deepest first,
+  and listed in a `Source folders removed` report section (present only in
+  keep-structure runs; the Totals line is unchanged). A folder is removed
+  only if it contained at least one moved file (at any depth) and nothing
+  remains in it after the run. Pre-existing empty folders are never removed,
+  and any leftover (skipped item, failed move, pre-existing empty subfolder)
+  keeps the whole chain in place.
+- **FR-40** — The manifest records the structured destinations. `--undo`
+  restores every file to its original subfolder (recreating source folders
+  the run removed), prunes the empty directory shells left inside type
+  folders the run created, then removes those type folders. Type folders that
+  pre-existed the run are left in place, including any empty shells inside
+  them.
+- **FR-41** — `--keep-structure` composes with `--dry-run`, including a
+  preview of the source-folder removals. With `--undo`, both flags are
+  accepted and ignored.
+
+### 15.2 NFR amendment
+
+NFR-5 is further amended: a keep-structure run may remove source folders it
+emptied (per FR-39); `--undo` recreates them. User files are still never
+deleted.

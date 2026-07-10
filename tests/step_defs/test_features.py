@@ -128,9 +128,30 @@ def workspace_nested_file_with_content(ctx, rel, content):
     path.write_text(content)
 
 
+@given(parsers.re(r'the workspace contains an empty subfolder named "(?P<rel>[^"]+)"$'))
+def workspace_empty_subfolder(ctx, rel):
+    (ctx["workspace"] / rel).mkdir(parents=True, exist_ok=True)
+
+
 @when("I run the organizer on the target with --recursive")
 def run_organizer_recursive(ctx, capsys):
     _run(ctx, capsys, ["--recursive"])
+
+
+@when("I run the organizer on the target with --recursive and --keep-structure")
+def run_organizer_keep_structure(ctx, capsys):
+    _run(ctx, capsys, ["--recursive", "--keep-structure"])
+
+
+@when("I run the organizer on the target with --keep-structure only")
+def run_organizer_keep_structure_only(ctx, capsys):
+    _run(ctx, capsys, ["--keep-structure"])
+
+
+@when("I run the organizer on the target with --recursive, --keep-structure and --dry-run")
+def run_organizer_keep_structure_dry(ctx, capsys):
+    ctx["snapshot"] = _snapshot(ctx["workspace"])
+    _run(ctx, capsys, ["--recursive", "--keep-structure", "--dry-run"])
 
 
 @when("I run the organizer on the target with --recursive and --dry-run")
