@@ -1,5 +1,7 @@
 # File Organizer
 
+[![CI](https://github.com/linusho123/file_organizer/actions/workflows/ci.yml/badge.svg)](https://github.com/linusho123/file_organizer/actions/workflows/ci.yml)
+
 A Python CLI that organizes all files **directly inside a folder** into
 subfolders named after each file's extension. A folder full of `.storx`,
 `.mzml`, `.dmt`, `.txt`, and `.md` files becomes:
@@ -27,7 +29,26 @@ executable Gherkin scenarios in [`features/`](features/).
 
 ## Installation
 
-### Global install — use from any directory, no venv (recommended)
+### From PyPI (once the first release is published)
+
+The package is published on PyPI as **`organize-by-extension`** (the names
+`file-organizer` and `file-organizer-cli` were taken; the command you type is
+still `file-organizer`). After the first GitHub release goes out:
+
+```bash
+# macOS / Linux
+python3 -m pip install organize-by-extension
+```
+
+```powershell
+# Windows (PowerShell)
+python -m pip install organize-by-extension
+```
+
+Upgrade later with `pip install --upgrade organize-by-extension`. Same
+no-venv, works-from-any-directory behavior as the install below.
+
+### Global install from the repository — use from any directory, no venv
 
 Install the CLI straight into your main Python. One command, run from
 anywhere (adjust the path to wherever this repository lives):
@@ -208,7 +229,8 @@ ruff format --check .
 Layout:
 
 ```text
-├── PRD.md                  # spec: goals, FR-1..FR-27, build phases
+├── PRD.md                  # spec: goals, FR-1..FR-48, build phases
+├── .github/workflows/      # CI (every push) and PyPI publish (on release)
 ├── features/               # Gherkin acceptance criteria (pytest-bdd)
 ├── src/file_organizer/
 │   ├── cli.py              # argument parsing, exit codes
@@ -226,6 +248,7 @@ Layout:
 | 0.2.0 | Iteration 2 — Undo | Move manifest written on every organizing run; `--undo` restores files (with collision suffixes), removes now-empty created folders, and consumes the manifest; partial failures keep a retryable manifest; `--undo --dry-run` preview. PRD §13. |
 | 0.3.0 | Iteration 3 — Recursive | `--recursive` organizes files at any depth into top-level type folders; type folders are destinations, never traversed; nested manifests protected; deterministic relative-path ordering; undo restores nested files to their original folders, recreating deleted ones. PRD §14. |
 | 0.4.0 | Iteration 4 — Keep structure | `--keep-structure` (with `--recursive`) mirrors each file's source subpath inside its type folder instead of flattening; mixed folders split by type; collisions resolved per destination folder; emptied source folders removed (reported in a `Source folders removed` section); undo restores the exact original tree and prunes empty shells. PRD §15. |
+| 0.5.0 | Iteration 5 — CI & PyPI packaging | GitHub Actions CI (lint + full suite on Ubuntu and Windows, Python 3.10/3.13); complete PyPI metadata as `organize-by-extension` with MIT license; release-triggered publish workflow via PyPI trusted publishing. No CLI changes. PRD §16. |
 
 ### Planned (backlog, PRD §11)
 
@@ -234,3 +257,7 @@ Layout:
 - `--only` / `--exclude` extension filters
 - Watch mode / scheduled organizing
 - Simple GUI or drag-and-drop wrapper
+
+## License
+
+MIT — see [LICENSE](LICENSE).
