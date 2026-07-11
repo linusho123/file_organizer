@@ -1,0 +1,28 @@
+[package]
+name = "file-organizer-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Native CLI front-end for the file organizer (real filesystem I/O)."
+
+[[bin]]
+name = "file-organizer"
+path = "src/main.rs"
+
+[dependencies]
+file-organizer-core = { path = "../core" }
+serde_json = "1"
+
+[dev-dependencies]
+gherkin-cargo-test = { path = "/home/biho/Documents/gherkin-cargo-test" }
+
+# BDD acceptance layer: the Gherkin features run through gherkin-cargo-test,
+# each set against the same native binary.
+[[test]]
+name = "features_original"
+harness = false
+
+[[test]]
+name = "features_augmented"
+harness = false

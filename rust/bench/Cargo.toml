@@ -1,0 +1,19 @@
+[package]
+name = "file-organizer-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure-core planning workload: reads a directory listing, emits the plan. One code path, four compiler endpoints."
+
+[lib]
+name = "file_organizer_bench"
+crate-type = ["rlib", "cdylib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"
+
+[dependencies]
+file-organizer-core = { path = "../core" }

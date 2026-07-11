@@ -1,0 +1,13 @@
+[package]
+name = "file-organizer-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure, filesystem-free planning/undo/report logic for the file organizer."
+
+[lib]
+name = "file_organizer_core"
+path = "src/lib.rs"
+
+[dependencies]
