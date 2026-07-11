@@ -18,3 +18,9 @@ htmlcov/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Rust / build endpoints
+rust/target/
+rust/**/target/
+bench_build/
+*.o
