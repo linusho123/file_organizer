@@ -28,8 +28,23 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wabt (provides wasm2c)
-        run: sudo apt-get update && sudo apt-get install -y wabt
+      # wasm2c and the wasm-rt runtime must be the same version, so build both
+      # from one wabt checkout rather than mixing apt's wasm2c with a vendored
+      # runtime of a different version.
+      - name: Cache wabt
+        uses: actions/cache@v4
+        with:
+          path: ~/wabt
+          key: wabt-main-v1
+
+      - name: Build wasm2c from wabt (if not cached)
+        run: |
+          set -e
+          if [ ! -x "$HOME/wabt/build/wasm2c" ]; then
+            git clone --recursive --depth 1 https://github.com/WebAssembly/wabt "$HOME/wabt"
+            cmake -S "$HOME/wabt" -B "$HOME/wabt/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+            cmake --build "$HOME/wabt/build" --target wasm2c -j"$(nproc)"
+          fi
 
       - name: Cache cosmocc toolchain
         uses: actions/cache@v4
@@ -49,7 +64,8 @@ jobs:
 
       - name: Build the universal binary
         env:
-          WASM2C: /usr/bin/wasm2c
+          WASM2C: /home/runner/wabt/build/wasm2c
+          WASM_RT_DIR: /home/runner/wabt/wasm2c
           COSMOCC: ${{ github.workspace }}/rust/bench_build/cosmocc-dist/bin/cosmocc
         run: ./ape/build-ape.sh
 

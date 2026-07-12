@@ -14,7 +14,9 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 WASM2C="${WASM2C:-$HOME/gitrepos/wabt/build/wasm2c}"
 COSMOCC="${COSMOCC:-$PWD/bench_build/cosmocc-dist/bin/cosmocc}"
 OUT="${OUT:-$PWD/bench_build}"
-RT="$PWD/ape/vendor/wasm-rt"
+# The wasm-rt runtime MUST match the wasm2c that generates the C. The vendored
+# copy matches the local WABT; CI overrides WASM_RT_DIR to its own build.
+RT="${WASM_RT_DIR:-$PWD/ape/vendor/wasm-rt}"
 mkdir -p "$OUT/reactor_c"
 
 echo "== 1/3 reactor -> wasm32-unknown-unknown =="
