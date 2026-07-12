@@ -1,0 +1,98 @@
+name: universal-binary
+
+# Builds the single universal file-organizer.com (Win/macOS/Linux/BSD) from the
+# Rust reactor via wasm2c + cosmocc, verifies it against the Gherkin Set B, and
+# publishes it. The binary is a build output — never committed to the repo.
+#
+# Triggers: manual (uploads an artifact), or a `universal-v*` tag (publishes a
+# GitHub release with the binary attached). It does NOT run on ordinary pushes,
+# so it never burdens normal CI.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["universal-v*"]
+
+permissions:
+  contents: write # create the release / upload the asset
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # wasm2c and the wasm-rt runtime must be the same version, so build both
+      # from one wabt checkout rather than mixing apt's wasm2c with a vendored
+      # runtime of a different version.
+      - name: Cache wabt
+        uses: actions/cache@v4
+        with:
+          path: ~/wabt
+          key: wabt-main-v1
+
+      - name: Build wasm2c from wabt (if not cached)
+        run: |
+          set -e
+          if [ ! -x "$HOME/wabt/build/wasm2c" ]; then
+            git clone --recursive --depth 1 https://github.com/WebAssembly/wabt "$HOME/wabt"
+            cmake -S "$HOME/wabt" -B "$HOME/wabt/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF
+            cmake --build "$HOME/wabt/build" --target wasm2c -j"$(nproc)"
+          fi
+
+      - name: Cache cosmocc toolchain
+        uses: actions/cache@v4
+        with:
+          path: rust/bench_build/cosmocc-dist
+          key: cosmocc-dist-v1
+
+      - name: Ensure cosmocc present
+        run: |
+          set -e
+          DEST="$PWD/bench_build/cosmocc-dist"
+          if [ ! -x "$DEST/bin/cosmocc" ]; then
+            mkdir -p "$DEST"
+            curl -fLo /tmp/cosmocc.zip https://cosmo.zip/pub/cosmocc/cosmocc.zip
+            unzip -q /tmp/cosmocc.zip -d "$DEST"
+          fi
+
+      - name: Build the universal binary
+        env:
+          WASM2C: /home/runner/wabt/build/wasm2c
+          WASM_RT_DIR: /home/runner/wabt/wasm2c
+          COSMOCC: ${{ github.workspace }}/rust/bench_build/cosmocc-dist/bin/cosmocc
+        run: ./ape/build-ape.sh
+
+      - name: Verify — Gherkin Set B against the built binary
+        run: |
+          set -e
+          cp bench_build/file-organizer.com /tmp/fo-verify.com
+          bench_build/cosmocc-dist/bin/assimilate -f /tmp/fo-verify.com  # APE -> native ELF so the runner can exec it
+          FO_BIN=/tmp/fo-verify.com cargo test --test features_augmented
+
+      - name: Upload artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-organizer-universal
+          path: rust/bench_build/file-organizer.com
+
+      - name: Publish release with the binary (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rust/bench_build/file-organizer.com
+          body: |
+            Universal `file-organizer.com` — one Actually-Portable Executable that
+            runs on Windows, macOS, Linux, and BSD (x86-64 + aarch64).
+
+            Built by CI from the Rust reactor (wasm2c → cosmocc) and **verified
+            against Gherkin Set B (75/75)** before publishing. See AGENTS.md.
+
+            Usage: `file-organizer.com --help` · `--dry-run <folder>` · `<folder>` · `--undo <folder>`

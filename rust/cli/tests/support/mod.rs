@@ -8,8 +8,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gherkin_cargo_test::StepRegistry;
 
-const BIN: &str = env!("CARGO_BIN_EXE_file-organizer");
+const NATIVE_BIN: &str = env!("CARGO_BIN_EXE_file-organizer");
 static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+/// Which binary to drive: the native dev build by default, or any other
+/// endpoint (e.g. the cosmocc APE) via `FO_BIN` — so the same feature files
+/// verify the shipped artifact, not just the dev build.
+fn bin() -> String {
+    std::env::var("FO_BIN").unwrap_or_else(|_| NATIVE_BIN.to_string())
+}
 
 #[derive(Clone, PartialEq, Eq)]
 enum SnapVal {
@@ -64,7 +71,7 @@ impl World {
     }
 
     fn run(&mut self, extra: &[&str]) {
-        let out = Command::new(BIN)
+        let out = Command::new(bin())
             .arg(&self.target)
             .args(extra)
             .output()

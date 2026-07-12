@@ -12,10 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 file-organizer-core = { path = "../core" }
-serde_json = "1"
+file-organizer-reactor = { path = "../reactor" }
 
 [dev-dependencies]
-gherkin-cargo-test = { path = "/home/biho/Documents/gherkin-cargo-test" }
+# Published framework, so CI and other machines build without a local checkout.
+# To test against a local in-development copy, override with a gitignored
+# .cargo/config.toml patch (see AGENTS.md).
+gherkin-cargo-test = "0.2"
 
 # BDD acceptance layer: the Gherkin features run through gherkin-cargo-test,
 # each set against the same native binary.

@@ -29,6 +29,31 @@ executable Gherkin scenarios in [`features/`](features/).
 
 ## Installation
 
+### Universal binary — no Python required
+
+If you'd rather not install Python at all — handy for a mixed fleet of Windows,
+macOS, and Linux machines — download the single self-contained `file-organizer.com`
+from this repository's [Releases](../../releases) page. The **same file** runs on
+all of them (it's an [Actually-Portable Executable](https://justine.lol/ape.html),
+built from a Rust port and verified against the same Gherkin scenarios below
+before each release is published).
+
+```bash
+# macOS / Linux — after downloading from Releases
+chmod +x file-organizer.com
+./file-organizer.com --help
+./file-organizer.com ~/Downloads/instrument_dump --dry-run
+```
+
+```powershell
+# Windows (PowerShell) — run it directly, no install
+.\file-organizer.com --help
+.\file-organizer.com "C:\Users\me\Downloads\instrument_dump" --dry-run
+```
+
+It takes the same options as the Python CLI (`--dry-run`, `--recursive`,
+`--keep-structure`, `--undo`, …) — see [Usage](#usage) below.
+
 ### From PyPI (once the first release is published)
 
 The package is published on PyPI as **`organize-by-extension`** (the names
