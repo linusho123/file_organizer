@@ -1,0 +1,72 @@
+name: universal-binary
+
+# Builds the single universal file-organizer.com (Win/macOS/Linux/BSD) from the
+# Rust reactor via wasm2c + cosmocc, verifies it against the Gherkin Set B, and
+# publishes it. The binary is a build output — never committed to the repo.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wabt (provides wasm2c)
+        run: sudo apt-get update && sudo apt-get install -y wabt
+
+      - name: Download cosmocc toolchain (cached)
+        id: cosmo
+        run: |
+          set -e
+          DEST="$PWD/bench_build/cosmocc-dist"
+          if [ ! -x "$DEST/bin/cosmocc" ]; then
+            mkdir -p "$DEST"
+            curl -fLo /tmp/cosmocc.zip https://cosmo.zip/pub/cosmocc/cosmocc.zip
+            unzip -q /tmp/cosmocc.zip -d "$DEST"
+          fi
+          echo "cosmocc=$DEST/bin/cosmocc" >> "$GITHUB_OUTPUT"
+
+      - name: Cache cosmocc
+        uses: actions/cache@v4
+        with:
+          path: rust/bench_build/cosmocc-dist
+          key: cosmocc-dist-v1
+
+      - name: Build the universal binary
+        env:
+          WASM2C: /usr/bin/wasm2c
+          COSMOCC: ${{ steps.cosmo.outputs.cosmocc }}
+        run: ./ape/build-ape.sh
+
+      - name: Verify — Gherkin Set B against the built binary
+        run: |
+          set -e
+          cp bench_build/file-organizer.com /tmp/fo-verify.com
+          bench_build/cosmocc-dist/bin/assimilate -f /tmp/fo-verify.com   # APE -> native ELF for the runner
+          FO_BIN=/tmp/fo-verify.com cargo test --test features_augmented
+
+      - name: Rename for distribution
+        run: cp bench_build/file-organizer.com bench_build/file-organizer-${{ github.event.release.tag_name || github.sha }}.com
+
+      - name: Upload artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: file-organizer-universal
+          path: rust/bench_build/file-organizer.com
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: rust/bench_build/file-organizer.com

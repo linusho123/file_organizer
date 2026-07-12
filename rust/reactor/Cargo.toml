@@ -1,0 +1,16 @@
+[package]
+name = "file-organizer-reactor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Endpoint-independent orchestration: turns a directory snapshot + argv into primitive filesystem ops + report. No I/O of its own — drivers replay the ops."
+
+[lib]
+name = "file_organizer_reactor"
+crate-type = ["rlib", "cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+file-organizer-core = { path = "../core" }
+serde_json = "1"
