@@ -67,6 +67,21 @@ WASI, which is the expensive, fragile path. Keep the wasm pure; keep the I/O in 
   Needs `wasm2c` (WABT) and `cosmocc`; paths are overridable via env (see the
   script). **CI builds and releases the binary; it is never committed** to git.
 
+## Releasing the universal binary
+
+The binary is produced by CI, never committed. To publish a version:
+
+```sh
+git tag universal-vX.Y.Z
+git push origin universal-vX.Y.Z
+```
+
+That fires `.github/workflows/universal-binary.yml`, which builds the APE
+(wasm2c + cosmocc), **runs Gherkin Set B against the built binary**, and — only
+if it's green — publishes a GitHub release with `file-organizer.com` attached.
+A manual run (Actions → *universal-binary* → *Run workflow*) uploads it as an
+artifact instead. The workflow never runs on ordinary pushes.
+
 ## Layout
 
 ```
