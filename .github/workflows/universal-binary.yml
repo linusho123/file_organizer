@@ -3,10 +3,17 @@ name: universal-binary
 # Builds the single universal file-organizer.com (Win/macOS/Linux/BSD) from the
 # Rust reactor via wasm2c + cosmocc, verifies it against the Gherkin Set B, and
 # publishes it. The binary is a build output — never committed to the repo.
+#
+# Triggers: manual (uploads an artifact), or a `universal-v*` tag (publishes a
+# GitHub release with the binary attached). It does NOT run on ordinary pushes,
+# so it never burdens normal CI.
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+  push:
+    tags: ["universal-v*"]
+
+permissions:
+  contents: write # create the release / upload the asset
 
 jobs:
   build:
@@ -24,8 +31,13 @@ jobs:
       - name: Install wabt (provides wasm2c)
         run: sudo apt-get update && sudo apt-get install -y wabt
 
-      - name: Download cosmocc toolchain (cached)
-        id: cosmo
+      - name: Cache cosmocc toolchain
+        uses: actions/cache@v4
+        with:
+          path: rust/bench_build/cosmocc-dist
+          key: cosmocc-dist-v1
+
+      - name: Ensure cosmocc present
         run: |
           set -e
           DEST="$PWD/bench_build/cosmocc-dist"
@@ -34,29 +46,19 @@ jobs:
             curl -fLo /tmp/cosmocc.zip https://cosmo.zip/pub/cosmocc/cosmocc.zip
             unzip -q /tmp/cosmocc.zip -d "$DEST"
           fi
-          echo "cosmocc=$DEST/bin/cosmocc" >> "$GITHUB_OUTPUT"
-
-      - name: Cache cosmocc
-        uses: actions/cache@v4
-        with:
-          path: rust/bench_build/cosmocc-dist
-          key: cosmocc-dist-v1
 
       - name: Build the universal binary
         env:
           WASM2C: /usr/bin/wasm2c
-          COSMOCC: ${{ steps.cosmo.outputs.cosmocc }}
+          COSMOCC: ${{ github.workspace }}/rust/bench_build/cosmocc-dist/bin/cosmocc
         run: ./ape/build-ape.sh
 
       - name: Verify — Gherkin Set B against the built binary
         run: |
           set -e
           cp bench_build/file-organizer.com /tmp/fo-verify.com
-          bench_build/cosmocc-dist/bin/assimilate -f /tmp/fo-verify.com   # APE -> native ELF for the runner
+          bench_build/cosmocc-dist/bin/assimilate -f /tmp/fo-verify.com  # APE -> native ELF so the runner can exec it
           FO_BIN=/tmp/fo-verify.com cargo test --test features_augmented
-
-      - name: Rename for distribution
-        run: cp bench_build/file-organizer.com bench_build/file-organizer-${{ github.event.release.tag_name || github.sha }}.com
 
       - name: Upload artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
@@ -65,8 +67,16 @@ jobs:
           name: file-organizer-universal
           path: rust/bench_build/file-organizer.com
 
-      - name: Attach to release
-        if: github.event_name == 'release'
+      - name: Publish release with the binary (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: rust/bench_build/file-organizer.com
+          body: |
+            Universal `file-organizer.com` — one Actually-Portable Executable that
+            runs on Windows, macOS, Linux, and BSD (x86-64 + aarch64).
+
+            Built by CI from the Rust reactor (wasm2c → cosmocc) and **verified
+            against Gherkin Set B (75/75)** before publishing. See AGENTS.md.
+
+            Usage: `file-organizer.com --help` · `--dry-run <folder>` · `<folder>` · `--undo <folder>`

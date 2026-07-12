@@ -50,6 +50,9 @@ omit = ["*/__main__.py"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# The rust/ tree is a separate compiler-endpoint experiment (its own toolchain);
+# its helper scripts are not part of this package's lint gate.
+extend-exclude = ["rust"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
