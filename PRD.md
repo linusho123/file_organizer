@@ -149,7 +149,7 @@ many files into one folder and wants them sorted by type in one command.
 - **FR-16** — Example report:
 
   ```text
-  Organizing: C:\Users\linus\Downloads\instrument_dump
+  Organizing: C:\Users\project_folder
 
   Folders created:
     STORX_Files
