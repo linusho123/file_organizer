@@ -93,6 +93,6 @@ jobs:
             runs on Windows, macOS, Linux, and BSD (x86-64 + aarch64).
 
             Built by CI from the Rust reactor (wasm2c → cosmocc) and **verified
-            against Gherkin Set B (75/75)** before publishing. See AGENTS.md.
+            against Gherkin Set B (89/89)** before publishing. See AGENTS.md.
 
-            Usage: `file-organizer.com --help` · `--dry-run <folder>` · `<folder>` · `--undo <folder>`
+            Usage: `file-organizer.com --help` · `--dry-run <folder>` · `<folder>` · `--undo <folder>` · `--recursive --keep-structure --move-folders <folder>`

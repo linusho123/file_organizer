@@ -490,3 +490,101 @@ on all four matrix cells after push. The publish workflow is verified up to
 the upload step; the actual first upload requires the repository owner to
 configure the trusted publisher on pypi.org (one-time) and publish a GitHub
 release.
+
+---
+
+## 17. Iteration 6 — Move folders whole (v0.6.0, Rust universal binary)
+
+Motivating case: the input folder contains a pre-existing subfolder holding
+~3,000 files of one type. `--recursive --keep-structure` reaches the right
+end state, but does it by moving every file individually — 3,000 move
+operations to reproduce a folder that already exists. With the new
+`--move-folders` flag the tool recognizes such a subfolder and **transports
+it whole**: one directory rename (`batch1/` → `STORI_Files/batch1/`) instead
+of re-creating the folder file by file.
+
+This iteration is implemented in the **Rust port** (`rust/`) and ships in the
+universal binary; the Python CLI is unchanged and rejects the flag as an
+unrecognized argument. Feature scenarios live in `rust/features_augmented/`
+(Set B), which gates the universal-binary release.
+
+### 17.1 Functional requirements
+
+- **FR-49** — With `--recursive --keep-structure --move-folders`, every
+  **eligible** top-level subfolder is transported whole into its type folder
+  with a single directory rename: `batch1/` (all `.stori` at every depth)
+  becomes `STORI_Files/batch1/`, contents untouched. The type folder is
+  created if needed and counted in `Folders created`. Files inside a
+  transported folder are not planned, moved, or reported individually.
+- **FR-50** — A top-level subfolder is eligible when (a) it contains at
+  least one non-manifest file at any depth, (b) every file at every depth inside it
+  classifies to the same type folder (§5 extension rules), and (c) it
+  contains no symlinks and no non-regular files. Nested
+  `.file_organizer_manifest.json` files are exempt from (b): they do not
+  count toward the type mix and simply travel with the folder, preserving
+  the subfolder's own undo history. Empty nested subfolders also travel with
+  the folder. Ineligible subfolders (mixed types, symlinks inside, no files)
+  fall back to normal recursive keep-structure per-file handling. Top-level
+  directories named like type folders remain destinations, never sources
+  (FR-29).
+- **FR-51** — `--move-folders` requires both `--recursive` and
+  `--keep-structure`; otherwise the tool exits `2` with
+  `Error: --move-folders requires --recursive --keep-structure`. It composes
+  with `--dry-run` (full preview, zero filesystem changes). With `--undo` the
+  flag is accepted and ignored (the manifest fully defines the undo).
+- **FR-52** — If the folder's name is already taken inside the type folder
+  (case-insensitive, by a file or a folder), the transported folder is
+  renamed with the lowest free `_N` suffix appended to the **end** of the
+  name (`batch1` → `batch1_1`; `v1.2` → `v1.2_1` — folder names have no
+  extension, so the suffix never splits at a dot). The rename is reported in
+  Issues as
+  `conflict: "batch1" already existed in STORI_Files; moved as "batch1_1"`
+  and counts toward the Totals conflict count.
+- **FR-53** — The report gains a `Folders moved` section, present only in
+  `--move-folders` runs, between `Files moved` and `Source folders removed`,
+  printing `none` when empty. Each transport renders as
+  `batch1/  ->  STORI_Files/batch1/  (N files)` where N counts the regular
+  files at every depth inside the folder. The Totals line format is
+  unchanged; transported folders' files do not count as `files moved`.
+  Transported folders do not appear in `Source folders removed` (they were
+  moved, not emptied and removed).
+- **FR-54** — The manifest records each transport under a `folder_moves` key
+  (source name, type folder, final name), written only when at least one
+  folder moved; ordinary manifests are byte-identical to before. `--undo`
+  restores each recorded folder with a single rename back to its original
+  top-level name (before file restores and type-folder removal). A retaken
+  top-level name gets the lowest free end-appended `_N` suffix and a
+  conflict entry `conflict: "batch1" already existed; restored as
+  "batch1_1"`. A recorded folder missing from its type folder is an error
+  (`error: could not restore "STORI_Files/batch1": folder not found`), exit
+  `1`, and the rewritten manifest keeps that entry for retry. Type folders
+  created by the recorded run are still removed only if nothing else
+  remains in them after all restores.
+- **FR-55** — The undo report gains a `Folders restored` section directly
+  after `Files restored`, present only when the manifest records folder
+  moves, rendering `STORI_Files/batch1/  ->  batch1/`. The Totals line
+  format is unchanged; restored folders do not count as `files restored`.
+
+### 17.2 Quality plan
+
+Same gate as previous Rust-port work: Gherkin scenarios in
+`rust/features_augmented/move_folders.feature` (acceptance criteria),
+unit tests on the pure planning/report/undo logic in `rust/core` and the
+reactor, `cargo test` green (both feature sets), and the universal-binary
+workflow's Set B run against the shipped APE before release.
+
+### 17.3 Build phases
+
+1. **Phase 1 — Contract**: this PRD section; `move_folders.feature` with
+   acceptance scenarios; unit tests for eligibility, folder-collision
+   naming, report sections, manifest round-trip, and undo planning
+   (written first, failing). *Gate:* scenarios/tests exist and fail.
+2. **Phase 2 — Core planning**: eligibility detection and whole-folder move
+   planning in `rust/core` (`build_plan`), report sections, manifest and
+   undo-plan structures. *Gate:* core unit tests green.
+3. **Phase 3 — Reactor**: flag parsing/validation, folder-move ops,
+   manifest `folder_moves` emission and parsing, undo ops. *Gate:* full
+   `cargo test` green (Set A 68 unchanged, Set B extended).
+4. **Phase 4 — Ship**: version 0.6.0, docs updated, PR green on CI, tag
+   `universal-v0.6.0` → CI builds the APE, verifies Set B against it, and
+   publishes the GitHub release.

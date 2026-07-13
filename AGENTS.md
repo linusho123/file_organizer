@@ -62,7 +62,9 @@ WASI, which is the expensive, fragile path. Keep the wasm pure; keep the I/O in 
 
 ## Build
 
-- Native + BDD suites: `cd rust && cargo test`  → Set A 68, Set B 75.
+- Native + BDD suites: `cd rust && cargo test`  → Set A 68, Set B 89.
+  (On Windows dev machines, 3 Set B scenarios need Unix facilities — fifo,
+  symlink, trailing-dot filenames — and fail locally; Linux CI runs all 89.)
 - Universal binary: `rust/ape/build-ape.sh`  → `rust/bench_build/file-organizer.com`.
   Needs `wasm2c` (WABT) and `cosmocc`; paths are overridable via env (see the
   script). **CI builds and releases the binary; it is never committed** to git.

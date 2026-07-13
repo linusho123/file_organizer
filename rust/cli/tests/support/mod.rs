@@ -197,6 +197,24 @@ pub fn organizer_steps(reg: &mut StepRegistry<World>) {
         ctx.world.run(&["--keep-structure"]);
     });
     reg.define(
+        r"^I run the organizer on the target with --recursive, --keep-structure and --move-folders$",
+        |ctx, _, _| ctx.world.run(&["--recursive", "--keep-structure", "--move-folders"]),
+    );
+    reg.define(
+        r"^I run the organizer on the target with --recursive, --keep-structure, --move-folders and --dry-run$",
+        |ctx, _, _| {
+            ctx.world.take_snapshot();
+            ctx.world.run(&["--recursive", "--keep-structure", "--move-folders", "--dry-run"]);
+        },
+    );
+    reg.define(r"^I run the organizer on the target with --move-folders only$", |ctx, _, _| {
+        ctx.world.run(&["--move-folders"]);
+    });
+    reg.define(
+        r"^I run the organizer on the target with --recursive and --move-folders$",
+        |ctx, _, _| ctx.world.run(&["--recursive", "--move-folders"]),
+    );
+    reg.define(
         r"^I run the organizer on the target with --recursive, --keep-structure and --dry-run$",
         |ctx, _, _| {
             ctx.world.take_snapshot();

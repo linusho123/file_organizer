@@ -32,3 +32,20 @@ jobs:
 
       - name: Test (unit + Gherkin scenarios, coverage gate)
         run: python -m pytest
+
+  # The Rust port: unit tests + both Gherkin sets against the native driver.
+  # (The universal-binary workflow re-verifies Set B against the shipped APE,
+  # but only on tags/manual runs — this job is the per-PR gate.)
+  rust:
+    name: rust / cargo test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Test (unit + Gherkin Set A and Set B)
+        run: cargo test

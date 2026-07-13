@@ -52,7 +52,11 @@ chmod +x file-organizer.com
 ```
 
 It takes the same options as the Python CLI (`--dry-run`, `--recursive`,
-`--keep-structure`, `--undo`, …) — see [Usage](#usage) below.
+`--keep-structure`, `--undo`, …) — see [Usage](#usage) below — plus one of its
+own: `--move-folders` (with `--recursive --keep-structure`) transports a
+subfolder whose files are all one type into its type folder with a **single
+rename** (`batch1/` → `STORI_Files/batch1/`) instead of moving thousands of
+files one by one. Undo restores transported folders the same way.
 
 ### From PyPI (once the first release is published)
 
@@ -274,6 +278,7 @@ Layout:
 | 0.3.0 | Iteration 3 — Recursive | `--recursive` organizes files at any depth into top-level type folders; type folders are destinations, never traversed; nested manifests protected; deterministic relative-path ordering; undo restores nested files to their original folders, recreating deleted ones. PRD §14. |
 | 0.4.0 | Iteration 4 — Keep structure | `--keep-structure` (with `--recursive`) mirrors each file's source subpath inside its type folder instead of flattening; mixed folders split by type; collisions resolved per destination folder; emptied source folders removed (reported in a `Source folders removed` section); undo restores the exact original tree and prunes empty shells. PRD §15. |
 | 0.5.0 | Iteration 5 — CI & PyPI packaging | GitHub Actions CI (lint + full suite on Ubuntu and Windows, Python 3.10/3.13); complete PyPI metadata as `organize-by-extension` with MIT license; release-triggered publish workflow via PyPI trusted publishing. No CLI changes. PRD §16. |
+| 0.6.0 | Iteration 6 — Move folders whole (universal binary only) | `--move-folders` (with `--recursive --keep-structure`) transports each single-type subfolder into its type folder with one directory rename instead of per-file moves; `Folders moved` report section; folder-aware manifest and undo. Implemented in the Rust universal binary; the Python CLI is unchanged. PRD §17. |
 
 ### Planned (backlog, PRD §11)
 
