@@ -43,7 +43,7 @@ pub fn run_bench(input: &[u8]) -> String {
         entries.push(Entry::new(path, kind));
     }
 
-    let plan = build_plan(&entries, recursive, keep_structure);
+    let plan = build_plan(&entries, recursive, keep_structure, false);
     format_report("/bench", &plan, None, false)
 }
 

@@ -53,12 +53,26 @@ pub struct SkippedItem {
     pub reason: String,
 }
 
+/// A whole top-level subfolder transported into its type folder with a single
+/// rename (move-folders mode). `file_count` is the number of regular files at
+/// any depth inside it, for the report.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlannedFolderMove {
+    pub source: String,
+    pub dest_folder: String,
+    pub final_name: String,
+    pub renamed: bool,
+    pub file_count: usize,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Plan {
     pub moves: Vec<PlannedMove>,
     pub new_folders: Vec<String>,
     pub skipped: Vec<SkippedItem>,
     pub keep_structure: bool,
+    pub move_folders: bool,
+    pub folder_moves: Vec<PlannedFolderMove>,
     pub removable_source_dirs: Vec<String>,
 }
 
@@ -133,6 +147,23 @@ pub fn resolve_name(name: &str, taken: &HashSet<String>) -> (String, bool) {
     }
 }
 
+/// Like [`resolve_name`], but for folder names: the `_N` suffix is always
+/// appended to the end (folder names have no extension to preserve, so
+/// `v1.2` becomes `v1.2_1`, never `v1_1.2`).
+pub fn resolve_folder_name(name: &str, taken: &HashSet<String>) -> (String, bool) {
+    if !taken.contains(&name.to_lowercase()) {
+        return (name.to_string(), false);
+    }
+    let mut counter = 1u64;
+    loop {
+        let candidate = format!("{name}_{counter}");
+        if !taken.contains(&candidate.to_lowercase()) {
+            return (candidate, true);
+        }
+        counter += 1;
+    }
+}
+
 // --- snapshot indexing ------------------------------------------------------
 
 fn split_parent(rel: &str) -> (&str, &str) {
@@ -198,7 +229,14 @@ struct ScanOut {
     source_dirs: Vec<String>,
 }
 
-fn scan(idx: &Index, dir: &str, top: bool, recursive: bool, out: &mut ScanOut) {
+fn scan(
+    idx: &Index,
+    dir: &str,
+    top: bool,
+    recursive: bool,
+    transported: &HashSet<String>,
+    out: &mut ScanOut,
+) {
     for &i in idx.children(dir) {
         let e = &idx.entries[i];
         let rel = e.rel.clone();
@@ -212,13 +250,15 @@ fn scan(idx: &Index, dir: &str, top: bool, recursive: bool, out: &mut ScanOut) {
             continue;
         }
         if e.kind == Kind::Dir {
-            if !recursive {
+            if top && transported.contains(&rel) {
+                // moved whole in this plan: neither a source nor a skip
+            } else if !recursive {
                 out.skipped.push(SkippedItem { name: rel, reason: "directory".into() });
             } else if top && is_type_folder(name) {
                 out.skipped.push(SkippedItem { name: rel, reason: "type folder".into() });
             } else {
                 out.source_dirs.push(rel.clone());
-                scan(idx, &rel, false, recursive, out);
+                scan(idx, &rel, false, recursive, transported, out);
             }
             continue;
         }
@@ -231,19 +271,100 @@ fn scan(idx: &Index, dir: &str, top: bool, recursive: bool, out: &mut ScanOut) {
     }
 }
 
-/// Scan `entries` and plan every move without any filesystem changes — the
-/// pure port of Python's `build_plan`.
-pub fn build_plan(entries: &[Entry], recursive: bool, keep_structure: bool) -> Plan {
-    let idx = Index::new(entries);
-    let mut plan = Plan { keep_structure, ..Default::default() };
-    let mut out = ScanOut { files: Vec::new(), skipped: Vec::new(), source_dirs: Vec::new() };
+/// Type folder + regular-file count for a subfolder every file of which (at
+/// any depth) classifies to one type folder — the move-folders eligibility
+/// check. Nested manifests are exempt from the type mix but counted as
+/// transported files; symlinks and non-regular files disqualify the folder.
+/// `None` when ineligible (mixed types, no non-manifest files, symlinks).
+fn eligible_folder(idx: &Index, root: &str) -> Option<(String, usize)> {
+    let mut dest: Option<String> = None;
+    let mut files = 0usize;
+    let mut stack = vec![root.to_string()];
+    while let Some(dir) = stack.pop() {
+        for &i in idx.children(&dir) {
+            let e = &idx.entries[i];
+            match e.kind {
+                Kind::Dir => stack.push(e.rel.clone()),
+                Kind::File => {
+                    files += 1;
+                    let name = split_parent(&e.rel).1;
+                    if name == MANIFEST_NAME {
+                        continue;
+                    }
+                    let d = folder_name_for(get_extension(name).as_deref());
+                    match &dest {
+                        None => dest = Some(d),
+                        Some(prev) if *prev == d => {}
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+    }
+    dest.map(|d| (d, files))
+}
 
-    scan(&idx, "", true, recursive, &mut out);
-    plan.skipped = out.skipped;
-    out.files.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+/// Scan `entries` and plan every move without any filesystem changes — the
+/// pure port of Python's `build_plan`, extended with move-folders planning.
+pub fn build_plan(
+    entries: &[Entry],
+    recursive: bool,
+    keep_structure: bool,
+    move_folders: bool,
+) -> Plan {
+    let idx = Index::new(entries);
+    let mut plan = Plan { keep_structure, move_folders, ..Default::default() };
+    let mut out = ScanOut { files: Vec::new(), skipped: Vec::new(), source_dirs: Vec::new() };
 
     let mut seen_dest: HashSet<String> = HashSet::new();
     let mut taken: HashMap<(String, String), HashSet<String>> = HashMap::new();
+
+    // Transports first: they claim names inside the type folders, so the
+    // per-file collision accounting below must see them already taken.
+    let mut transported: HashSet<String> = HashSet::new();
+    if move_folders {
+        for &i in idx.children("") {
+            let e = &idx.entries[i];
+            let name = e.rel.clone();
+            if e.kind != Kind::Dir || is_type_folder(&name) {
+                continue;
+            }
+            let Some((dest_folder, file_count)) = eligible_folder(&idx, &name) else {
+                continue;
+            };
+            transported.insert(name.clone());
+            if !seen_dest.contains(&dest_folder) {
+                seen_dest.insert(dest_folder.clone());
+                if !idx.is_dir(&dest_folder) {
+                    plan.new_folders.push(dest_folder.clone());
+                }
+            }
+            let key = (dest_folder.clone(), String::new());
+            if !taken.contains_key(&key) {
+                let set = if idx.is_dir(&dest_folder) {
+                    idx.child_names_lower(&dest_folder)
+                } else {
+                    HashSet::new()
+                };
+                taken.insert(key.clone(), set);
+            }
+            let set = taken.get_mut(&key).unwrap();
+            let (final_name, renamed) = resolve_folder_name(&name, set);
+            set.insert(final_name.to_lowercase());
+            plan.folder_moves.push(PlannedFolderMove {
+                source: name,
+                dest_folder,
+                final_name,
+                renamed,
+                file_count,
+            });
+        }
+    }
+
+    scan(&idx, "", true, recursive, &transported, &mut out);
+    plan.skipped = out.skipped;
+    out.files.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
 
     for rel in &out.files {
         let (parent, basename) = split_parent(rel);
@@ -342,6 +463,7 @@ pub struct RecordedMove {
 #[derive(Clone, Debug, Default)]
 pub struct Manifest {
     pub moves: Vec<RecordedMove>,
+    pub folder_moves: Vec<RecordedMove>,
     pub new_folders: Vec<String>,
 }
 
@@ -358,6 +480,9 @@ pub struct PlannedRestore {
 pub struct UndoPlan {
     pub restores: Vec<PlannedRestore>,
     pub missing: Vec<RecordedMove>,
+    pub folder_restores: Vec<PlannedRestore>,
+    pub missing_folders: Vec<RecordedMove>,
+    pub has_folder_moves: bool,
     pub removable_folders: Vec<String>,
 }
 
@@ -374,6 +499,30 @@ pub fn build_undo_plan(entries: &[Entry], manifest: &Manifest) -> UndoPlan {
     let idx = Index::new(entries);
     let mut plan = UndoPlan::default();
     let mut taken_by_dir: HashMap<String, HashSet<String>> = HashMap::new();
+
+    // Transported folders restore first (single rename back to the top
+    // level), claiming top-level names before any file restores do.
+    plan.has_folder_moves = !manifest.folder_moves.is_empty();
+    for m in &manifest.folder_moves {
+        let current = format!("{}/{}", m.dest_folder, m.final_name);
+        if !idx.is_dir(&current) {
+            plan.missing_folders.push(m.clone());
+            continue;
+        }
+        if !taken_by_dir.contains_key("") {
+            taken_by_dir.insert(String::new(), idx.child_names_lower(""));
+        }
+        let set = taken_by_dir.get_mut("").unwrap();
+        let (restore_name, renamed) = resolve_folder_name(&m.source, set);
+        set.insert(restore_name.to_lowercase());
+        plan.folder_restores.push(PlannedRestore {
+            source: m.source.clone(),
+            dest_folder: m.dest_folder.clone(),
+            final_name: m.final_name.clone(),
+            restore_name,
+            renamed,
+        });
+    }
 
     for m in &manifest.moves {
         let current = format!("{}/{}", m.dest_folder, m.final_name);
@@ -412,18 +561,30 @@ pub fn build_undo_plan(entries: &[Entry], manifest: &Manifest) -> UndoPlan {
         .iter()
         .map(|r| (r.dest_folder.to_lowercase(), r.final_name.to_lowercase()))
         .collect();
+    // Everything inside a restored folder leaves with it.
+    let restored_folder_prefixes: Vec<(String, String)> = plan
+        .folder_restores
+        .iter()
+        .map(|r| (r.dest_folder.to_lowercase(), format!("{}/", r.final_name.to_lowercase())))
+        .collect();
 
     for name in &manifest.new_folders {
         if !idx.is_dir(name) {
             continue;
         }
         let prefix = format!("{name}/");
+        let name_lower = name.to_lowercase();
         let leftover = idx.entries.iter().any(|e| {
             if !e.rel.starts_with(&prefix) || e.kind == Kind::Dir {
                 return false;
             }
             let within = e.rel[prefix.len()..].to_lowercase();
-            !restored_away.contains(&(name.to_lowercase(), within))
+            if restored_away.contains(&(name_lower.clone(), within.clone())) {
+                return false;
+            }
+            !restored_folder_prefixes
+                .iter()
+                .any(|(dest, fp)| *dest == name_lower && within.starts_with(fp.as_str()))
         });
         if !leftover {
             plan.removable_folders.push(name.clone());
@@ -486,6 +647,23 @@ pub fn format_report(folder: &str, plan: &Plan, result: Option<&RunResult>, dry_
         .collect();
     section(&mut lines, "Files moved", &move_lines);
 
+    if plan.move_folders {
+        let folder_lines: Vec<String> = plan
+            .folder_moves
+            .iter()
+            .map(|m| {
+                format!(
+                    "{}/  ->  {}/{}/  ({})",
+                    m.source,
+                    m.dest_folder,
+                    m.final_name,
+                    count(m.file_count, "file")
+                )
+            })
+            .collect();
+        section(&mut lines, "Folders moved", &folder_lines);
+    }
+
     if plan.keep_structure {
         let removed: &[String] = match result {
             None => &plan.removable_source_dirs,
@@ -502,6 +680,8 @@ pub fn format_report(folder: &str, plan: &Plan, result: Option<&RunResult>, dry_
     section(&mut lines, "Skipped", &skip_lines);
 
     let conflicts: Vec<&PlannedMove> = moves.iter().filter(|m| m.renamed).collect();
+    let folder_conflicts: Vec<&PlannedFolderMove> =
+        plan.folder_moves.iter().filter(|m| m.renamed).collect();
     let mut issues: Vec<String> = conflicts
         .iter()
         .map(|m| {
@@ -511,6 +691,12 @@ pub fn format_report(folder: &str, plan: &Plan, result: Option<&RunResult>, dry_
             )
         })
         .collect();
+    issues.extend(folder_conflicts.iter().map(|m| {
+        format!(
+            "conflict: \"{}\" already existed in {}; moved as \"{}\"",
+            m.source, m.dest_folder, m.final_name
+        )
+    }));
     issues.extend(
         errors
             .iter()
@@ -522,7 +708,7 @@ pub fn format_report(folder: &str, plan: &Plan, result: Option<&RunResult>, dry_
         "Totals: {} moved, {} created, {}, {}",
         count(moves.len(), "file"),
         count(plan.new_folders.len(), "folder"),
-        count(conflicts.len(), "conflict"),
+        count(conflicts.len() + folder_conflicts.len(), "conflict"),
         count(errors.len(), "error"),
     ));
     lines.join("\n")
@@ -545,6 +731,10 @@ pub fn format_undo_report(
                     source: format!("{}/{}", m.dest_folder, m.final_name),
                     message: "file not found".to_string(),
                 })
+                .chain(plan.missing_folders.iter().map(|m| MoveError {
+                    source: format!("{}/{}", m.dest_folder, m.final_name),
+                    message: "folder not found".to_string(),
+                }))
                 .collect(),
         ),
         Some(r) => (&r.restored, r.removed_folders.clone(), r.errors.clone()),
@@ -564,7 +754,20 @@ pub fn format_undo_report(
         .collect();
     section(&mut lines, "Files restored", &restore_lines);
 
-    let conflicts: Vec<&PlannedRestore> = restores.iter().filter(|r| r.renamed).collect();
+    if plan.has_folder_moves {
+        let folder_lines: Vec<String> = plan
+            .folder_restores
+            .iter()
+            .map(|r| format!("{}/{}/  ->  {}/", r.dest_folder, r.final_name, r.restore_name))
+            .collect();
+        section(&mut lines, "Folders restored", &folder_lines);
+    }
+
+    let conflicts: Vec<&PlannedRestore> = restores
+        .iter()
+        .chain(plan.folder_restores.iter())
+        .filter(|r| r.renamed)
+        .collect();
     let mut issues: Vec<String> = conflicts
         .iter()
         .map(|r| {
@@ -589,4 +792,260 @@ pub fn format_undo_report(
         count(errors.len(), "error"),
     ));
     lines.join("\n")
+}
+
+// --- unit tests (Iteration 6 — move folders whole) ---------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f(rel: &str) -> Entry {
+        Entry::new(rel, Kind::File)
+    }
+    fn d(rel: &str) -> Entry {
+        Entry::new(rel, Kind::Dir)
+    }
+
+    fn plan_mf(entries: &[Entry]) -> Plan {
+        build_plan(entries, true, true, true)
+    }
+
+    #[test]
+    fn homogeneous_folder_is_transported_whole() {
+        let entries =
+            vec![d("batch1"), f("batch1/a.stori"), d("batch1/deep"), f("batch1/deep/b.stori")];
+        let plan = plan_mf(&entries);
+        assert_eq!(plan.folder_moves.len(), 1);
+        let m = &plan.folder_moves[0];
+        assert_eq!(
+            (m.source.as_str(), m.dest_folder.as_str(), m.final_name.as_str()),
+            ("batch1", "STORI_Files", "batch1")
+        );
+        assert!(!m.renamed);
+        assert_eq!(m.file_count, 2);
+        assert!(plan.moves.is_empty(), "no per-file moves for a transported folder");
+        assert_eq!(plan.new_folders, vec!["STORI_Files".to_string()]);
+        assert!(plan.removable_source_dirs.is_empty());
+        assert!(plan.skipped.is_empty());
+    }
+
+    #[test]
+    fn mixed_type_folder_falls_back_to_per_file() {
+        let entries = vec![d("batch1"), f("batch1/a.stori"), f("batch1/notes.txt")];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+        assert_eq!(plan.moves.len(), 2);
+    }
+
+    #[test]
+    fn symlink_inside_disqualifies_the_folder() {
+        let entries =
+            vec![d("batch1"), f("batch1/a.stori"), Entry::new("batch1/link", Kind::Symlink)];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+        assert_eq!(plan.moves.len(), 1, "regular files still move per-file");
+    }
+
+    #[test]
+    fn non_regular_file_inside_disqualifies_the_folder() {
+        let entries =
+            vec![d("batch1"), f("batch1/a.stori"), Entry::new("batch1/pipe", Kind::Other)];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+    }
+
+    #[test]
+    fn nested_manifest_is_exempt_but_counted() {
+        let entries =
+            vec![d("batch1"), f("batch1/a.stori"), f("batch1/.file_organizer_manifest.json")];
+        let plan = plan_mf(&entries);
+        assert_eq!(plan.folder_moves.len(), 1);
+        assert_eq!(plan.folder_moves[0].file_count, 2);
+    }
+
+    #[test]
+    fn folder_with_only_a_manifest_is_ineligible() {
+        let entries = vec![d("batch1"), f("batch1/.file_organizer_manifest.json")];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+        assert!(plan.moves.is_empty());
+    }
+
+    #[test]
+    fn empty_folder_is_ineligible() {
+        let entries = vec![d("batch1"), d("batch1/empty")];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+    }
+
+    #[test]
+    fn empty_nested_subfolders_travel_with_an_eligible_folder() {
+        let entries = vec![d("batch1"), f("batch1/a.stori"), d("batch1/empty")];
+        let plan = plan_mf(&entries);
+        assert_eq!(plan.folder_moves.len(), 1);
+    }
+
+    #[test]
+    fn type_folders_are_never_transported() {
+        let entries = vec![d("STORI_Files"), f("STORI_Files/a.stori")];
+        let plan = plan_mf(&entries);
+        assert!(plan.folder_moves.is_empty());
+        assert_eq!(plan.skipped.len(), 1);
+        assert_eq!(plan.skipped[0].reason, "type folder");
+    }
+
+    #[test]
+    fn without_the_flag_nothing_is_transported() {
+        let entries = vec![d("batch1"), f("batch1/a.stori")];
+        let plan = build_plan(&entries, true, true, false);
+        assert!(plan.folder_moves.is_empty());
+        assert_eq!(plan.moves.len(), 1);
+    }
+
+    #[test]
+    fn taken_destination_gets_end_appended_suffix() {
+        let entries = vec![
+            d("STORI_Files"),
+            d("STORI_Files/batch1"),
+            f("STORI_Files/batch1/old.stori"),
+            d("batch1"),
+            f("batch1/new.stori"),
+        ];
+        let plan = plan_mf(&entries);
+        assert_eq!(plan.folder_moves.len(), 1);
+        let m = &plan.folder_moves[0];
+        assert_eq!(m.final_name, "batch1_1");
+        assert!(m.renamed);
+        assert!(plan.new_folders.is_empty());
+    }
+
+    #[test]
+    fn resolve_folder_name_never_splits_at_a_dot() {
+        let taken: HashSet<String> = ["v1.2".to_string()].into_iter().collect();
+        assert_eq!(resolve_folder_name("v1.2", &taken), ("v1.2_1".to_string(), true));
+        assert_eq!(resolve_folder_name("fresh", &taken), ("fresh".to_string(), false));
+    }
+
+    #[test]
+    fn two_folders_with_case_colliding_names_get_suffixes() {
+        let entries = vec![d("Batch1"), f("Batch1/a.stori"), d("batch1"), f("batch1/b.stori")];
+        let plan = plan_mf(&entries);
+        assert_eq!(plan.folder_moves.len(), 2);
+        let names: Vec<&str> = plan.folder_moves.iter().map(|m| m.final_name.as_str()).collect();
+        // Case-insensitive sort ties break on input order: Batch1 was seen first.
+        assert_eq!(names, vec!["Batch1", "batch1_1"]);
+    }
+
+    #[test]
+    fn report_shows_folders_moved_section_and_unchanged_totals() {
+        let entries = vec![d("batch1"), f("batch1/a.stori"), f("batch1/b.stori")];
+        let plan = plan_mf(&entries);
+        let report = format_report("/x", &plan, None, false);
+        assert!(report.contains("Folders moved:\n  batch1/  ->  STORI_Files/batch1/  (2 files)"));
+        assert!(report.contains("Totals: 0 files moved, 1 folder created, 0 conflicts, 0 errors"));
+    }
+
+    #[test]
+    fn report_folder_conflict_line_and_count() {
+        let entries = vec![
+            d("STORI_Files"),
+            d("STORI_Files/batch1"),
+            f("STORI_Files/batch1/old.stori"),
+            d("batch1"),
+            f("batch1/new.stori"),
+        ];
+        let plan = plan_mf(&entries);
+        let report = format_report("/x", &plan, None, false);
+        assert!(report
+            .contains("conflict: \"batch1\" already existed in STORI_Files; moved as \"batch1_1\""));
+        assert!(report.contains("Totals: 0 files moved, 0 folders created, 1 conflict, 0 errors"));
+    }
+
+    #[test]
+    fn report_has_no_folders_moved_section_without_the_flag() {
+        let entries = vec![d("batch1"), f("batch1/a.stori")];
+        let plan = build_plan(&entries, true, true, false);
+        let report = format_report("/x", &plan, None, false);
+        assert!(!report.contains("Folders moved:"));
+    }
+
+    fn folder_manifest() -> Manifest {
+        Manifest {
+            moves: vec![],
+            folder_moves: vec![RecordedMove {
+                source: "batch1".to_string(),
+                dest_folder: "STORI_Files".to_string(),
+                final_name: "batch1".to_string(),
+            }],
+            new_folders: vec!["STORI_Files".to_string()],
+        }
+    }
+
+    #[test]
+    fn undo_plans_a_whole_folder_restore_and_removes_the_type_folder() {
+        let entries =
+            vec![d("STORI_Files"), d("STORI_Files/batch1"), f("STORI_Files/batch1/a.stori")];
+        let plan = build_undo_plan(&entries, &folder_manifest());
+        assert_eq!(plan.folder_restores.len(), 1);
+        let r = &plan.folder_restores[0];
+        assert_eq!(r.restore_name, "batch1");
+        assert!(!r.renamed);
+        assert!(plan.missing_folders.is_empty());
+        assert_eq!(plan.removable_folders, vec!["STORI_Files".to_string()]);
+    }
+
+    #[test]
+    fn undo_resolves_a_retaken_top_level_name() {
+        let entries = vec![
+            d("STORI_Files"),
+            d("STORI_Files/batch1"),
+            f("STORI_Files/batch1/a.stori"),
+            d("batch1"),
+            f("batch1/marker.txt"),
+        ];
+        let plan = build_undo_plan(&entries, &folder_manifest());
+        let r = &plan.folder_restores[0];
+        assert_eq!(r.restore_name, "batch1_1");
+        assert!(r.renamed);
+    }
+
+    #[test]
+    fn undo_reports_a_missing_transported_folder() {
+        let entries = vec![d("STORI_Files")];
+        let plan = build_undo_plan(&entries, &folder_manifest());
+        assert!(plan.folder_restores.is_empty());
+        assert_eq!(plan.missing_folders.len(), 1);
+        let report = format_undo_report("/x", &plan, None, false);
+        assert!(
+            report.contains("error: could not restore \"STORI_Files/batch1\": folder not found")
+        );
+    }
+
+    #[test]
+    fn undo_report_shows_folders_restored_section() {
+        let entries =
+            vec![d("STORI_Files"), d("STORI_Files/batch1"), f("STORI_Files/batch1/a.stori")];
+        let plan = build_undo_plan(&entries, &folder_manifest());
+        let report = format_undo_report("/x", &plan, None, false);
+        assert!(report.contains("Folders restored:\n  STORI_Files/batch1/  ->  batch1/"));
+        assert!(report.contains("Totals: 0 files restored, 1 folder removed, 0 conflicts, 0 errors"));
+    }
+
+    #[test]
+    fn undo_report_has_no_folders_restored_section_for_plain_manifests() {
+        let manifest = Manifest {
+            moves: vec![RecordedMove {
+                source: "a.stori".to_string(),
+                dest_folder: "STORI_Files".to_string(),
+                final_name: "a.stori".to_string(),
+            }],
+            folder_moves: vec![],
+            new_folders: vec!["STORI_Files".to_string()],
+        };
+        let entries = vec![d("STORI_Files"), f("STORI_Files/a.stori")];
+        let plan = build_undo_plan(&entries, &manifest);
+        let report = format_undo_report("/x", &plan, None, false);
+        assert!(!report.contains("Folders restored:"));
+    }
 }

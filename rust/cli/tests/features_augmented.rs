@@ -17,6 +17,7 @@ fn main() {
         .feature("edge_behaviors", organizer_steps)
         .feature("input_validation", organizer_steps)
         .feature("keep_structure", organizer_steps)
+        .feature("move_folders", organizer_steps)
         .feature("recursive", organizer_steps)
         .feature("report", organizer_steps)
         .feature("undo", organizer_steps)

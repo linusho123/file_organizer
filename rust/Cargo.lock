@@ -115,14 +115,14 @@ checksum = "5692dd7b5a1978a5aeb0ce83b7655c58ca8efdcb79d21036ea249da95afec2c6"
 
 [[package]]
 name = "file-organizer-bench"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "file-organizer-core",
 ]
 
 [[package]]
 name = "file-organizer-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "file-organizer-core",
  "file-organizer-reactor",
@@ -131,11 +131,11 @@ dependencies = [
 
 [[package]]
 name = "file-organizer-core"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "file-organizer-reactor"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "file-organizer-core",
  "serde_json",
